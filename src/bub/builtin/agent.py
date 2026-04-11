@@ -364,10 +364,10 @@ class _ToolAutoOutcome:
 
 
 def _resolve_tool_auto_result(final_data: dict[str, Any]) -> _ToolAutoOutcome:
-    if (text := final_data.get("text")) is not None:
-        return _ToolAutoOutcome(kind="text", text=text)
     if final_data.get("tool_calls") or final_data.get("tool_results"):
         return _ToolAutoOutcome(kind="continue")
+    if (text := final_data.get("text")) is not None:
+        return _ToolAutoOutcome(kind="text", text=text)
     return _ToolAutoOutcome(kind="error", error="unknown error")
 
 
