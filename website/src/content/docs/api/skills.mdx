@@ -1,0 +1,103 @@
+---
+title: Skills API
+description: Skill discovery, validation, and the SkillMetadata dataclass in src/bub/skills.py.
+sidebar:
+  order: 4
+---
+
+`src/bub/skills.py` handles skill discovery, frontmatter validation, and prompt rendering.
+Skills are `SKILL.md` files discovered from three layered roots in priority order: **project → global → builtin**.
+
+## Constants
+
+| Name | Value | Purpose |
+|------|-------|---------|
+| `PROJECT_SKILLS_DIR` | `.agents/skills` | Per-workspace skill root |
+| `LEGACY_SKILLS_DIR` | `.agent/skills` | Legacy location (deprecated, emits warning) |
+| `SKILL_FILE_NAME` | `SKILL.md` | Expected filename inside each skill directory |
+| `SKILL_SOURCES` | `("project", "global", "builtin")` | Discovery order |
+| `SKILL_NAME_PATTERN` | `^[a-z0-9]+(?:-[a-z0-9]+)*$` | Valid skill name regex |
+
+## `SkillMetadata`
+
+```python
+@dataclass(frozen=True)
+class SkillMetadata:
+    name: str
+    description: str
+    location: Path
+    source: str
+    metadata: dict[str, Any]
+```
+
+Immutable dataclass representing a discovered skill.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `str` | Skill name, matches the skill directory name |
+| `description` | `str` | Short description from frontmatter |
+| `location` | `Path` | Absolute path to `SKILL.md` |
+| `source` | `str` | One of `"project"`, `"global"`, `"builtin"` |
+| `metadata` | `dict[str, Any]` | Full frontmatter dict (keys lowercased) |
+
+### `SkillMetadata.body() → str`
+
+Returns the skill body — file content with frontmatter stripped and `$SKILL_DIR` / `$PYTHON` template variables substituted. Returns `""` on read error.
+
+## `discover_skills()`
+
+```python
+def discover_skills(workspace_path: Path) -> list[SkillMetadata]
+```
+
+Discovers skills from all three roots. Earlier sources win on name collision (project overrides global, global overrides builtin). Returns a list sorted case-insensitively by name.
+
+**Roots searched (in order):**
+
+1. `<workspace>/.agents/skills/` (`"project"`)
+2. `~/.agents/skills/` (`"global"`)
+3. Bundled `skills/` package (`"builtin"`)
+
+A legacy `.agent/skills/` directory is also scanned with a deprecation warning if present.
+
+## `render_skills_prompt()`
+
+```python
+def render_skills_prompt(
+    skills: list[SkillMetadata],
+    expanded_skills: Collection[str] = (),
+) -> str
+```
+
+Renders skills as an `<available_skills>` XML block for model prompts.
+
+- **Collapsed** (default): `- name: description`
+- **Expanded** (name in `expanded_skills`): also includes `Location:` and the full skill body.
+
+Returns `""` if `skills` is empty.
+
+## Frontmatter Schema
+
+Each `SKILL.md` must open with a YAML frontmatter block:
+
+```yaml
+---
+name: my-skill        # required, matches directory name, max 64 chars
+description: ...      # required, max 1024 chars
+metadata:             # optional, dict[str, str] of extra key/value pairs
+  key: value
+---
+```
+
+**Validation rules:**
+
+- `name` must match `^[a-z0-9]+(?:-[a-z0-9]+)*$` and equal the containing directory name.
+- `description` must be non-empty and ≤ 1024 characters.
+- `metadata` values must all be strings if present.
+
+Skills that fail validation are silently skipped during discovery.
+
+## Override Precedence
+
+Skills with the same name found in multiple sources use the **first source wins** rule.
+This means a project-level `SKILL.md` will shadow a global or builtin skill of the same name.

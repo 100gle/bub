@@ -14,66 +14,21 @@ const links: NavLink[] = [
 ];
 ---
 
-<nav>
-  <a class="nav-logo" href="/">bub</a>
-  <ul class="nav-links">
+<nav class="sticky top-0 z-50 flex items-center justify-between px-4 md:px-12 h-[60px] bg-[rgba(13,15,26,0.8)] backdrop-blur-md border-b border-[rgba(255,255,255,0.08)]">
+  <a class="text-2xl font-extrabold text-[#4f7eff] no-underline tracking-tight" href="/">bub</a>
+  <ul class="flex gap-6 list-none items-center">
     {links.map((link) => (
       <li>
-        <a href={link.href} class={link.cta ? "btn-nav" : undefined}>
-          {link.label}
-        </a>
+        {link.cta ? (
+          <a href={link.href} class="px-4 py-1.5 rounded-md bg-[#4f7eff] text-white text-sm font-semibold no-underline transition-opacity hover:opacity-85">
+            {link.label}
+          </a>
+        ) : (
+          <a href={link.href} class="text-[#888b99] text-sm no-underline transition-colors hover:text-[#e8eaf6]">
+            {link.label}
+          </a>
+        )}
       </li>
     ))}
   </ul>
 </nav>
-
-<style>
-  nav {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 clamp(1rem, 4vw, 3rem);
-    height: 60px;
-    background: color-mix(in srgb, var(--bg) 80%, transparent);
-    backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .nav-logo {
-    font-size: 1.4rem;
-    font-weight: 800;
-    color: var(--accent);
-    text-decoration: none;
-    letter-spacing: -0.02em;
-  }
-
-  .nav-links {
-    display: flex;
-    gap: 1.5rem;
-    list-style: none;
-    align-items: center;
-  }
-
-  .nav-links a {
-    color: var(--text-muted);
-    text-decoration: none;
-    font-size: 0.9rem;
-    transition: color 0.2s;
-  }
-
-  .nav-links a:hover { color: var(--text); }
-
-  .nav-links .btn-nav {
-    background: var(--accent);
-    color: #fff !important;
-    padding: 0.35rem 1rem;
-    border-radius: 6px;
-    font-weight: 600;
-    transition: opacity 0.2s;
-  }
-
-  .nav-links .btn-nav:hover { opacity: 0.85; }
-</style>

@@ -1,68 +1,26 @@
 ---
 ---
 
-<section class="install-section">
-  <div class="install-box">
-    <h2 class="install-title">Get started in seconds</h2>
-    <p class="install-sub">Install from PyPI, configure a model key, and start building.</p>
-    <div class="install-cmd">
-      <span class="prompt">$</span>
+<section class="max-w-2xl mx-auto px-4 md:px-12 pb-24 md:pb-32 text-center">
+  <div class="bg-[#1a1d2e] border border-[rgba(255,255,255,0.08)] rounded-xl p-10">
+    <h2 class="text-2xl font-extrabold mb-2">Get started in seconds</h2>
+    <p class="text-[#888b99] mb-6">Install from PyPI, configure a model key, and start building.</p>
+
+    <div class="flex items-center justify-center gap-2 bg-[#252840] border border-[rgba(255,255,255,0.08)] rounded-lg px-5 py-3.5 font-mono text-base mb-5">
+      <span class="text-[#4f7eff] select-none">$</span>
       <span>pip install bub</span>
     </div>
-    <div class="install-links">
-      <a class="btn btn-primary" href="/en/">Read the Docs →</a>
-      <a class="btn btn-secondary" href="https://github.com/bubbuild/bub">View on GitHub</a>
-      <a class="btn btn-secondary" href="https://pypi.org/project/bub">PyPI</a>
+
+    <div class="flex flex-wrap gap-3 justify-center">
+      <a class="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-semibold no-underline bg-[#4f7eff] text-white transition-all hover:opacity-85" href="/">
+        Read the Docs →
+      </a>
+      <a class="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-semibold no-underline bg-[#252840] text-[#e8eaf6] border border-[rgba(255,255,255,0.08)] transition-all hover:bg-[#1a1d2e]" href="https://github.com/bubbuild/bub">
+        View on GitHub
+      </a>
+      <a class="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-semibold no-underline bg-[#252840] text-[#e8eaf6] border border-[rgba(255,255,255,0.08)] transition-all hover:bg-[#1a1d2e]" href="https://pypi.org/project/bub">
+        PyPI
+      </a>
     </div>
   </div>
 </section>
-
-<style>
-  .install-section {
-    max-width: 700px;
-    margin: 0 auto;
-    padding: 0 clamp(1rem, 4vw, 3rem) clamp(4rem, 8vw, 6rem);
-    text-align: center;
-  }
-
-  .install-box {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 2.5rem;
-  }
-
-  .install-title {
-    font-size: 1.6rem;
-    font-weight: 800;
-    margin-bottom: 0.5rem;
-  }
-
-  .install-sub {
-    color: var(--text-muted);
-    margin-bottom: 1.5rem;
-  }
-
-  .install-cmd {
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.85rem 1.25rem;
-    font-family: var(--font-mono);
-    font-size: 1rem;
-    margin-bottom: 1.25rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-  }
-
-  .install-cmd .prompt { color: var(--accent); user-select: none; }
-
-  .install-links {
-    display: flex;
-    gap: 0.75rem;
-    justify-content: center;
-    flex-wrap: wrap;
-  }
-</style>

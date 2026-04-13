@@ -1,8 +1,12 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   site: 'https://bub.build',
+  vite: {
+    plugins: [tailwindcss()],
+  },
   integrations: [
     starlight({
       title: 'Bub',
@@ -15,15 +19,14 @@ export default defineConfig({
       favicon: '/favicon.svg',
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/bubbuild/bub' },
-        { icon: 'pypi', label: 'PyPI', href: 'https://pypi.org/project/bub' },
       ],
       editLink: {
         baseUrl: 'https://github.com/bubbuild/bub/edit/main/website/',
       },
       customCss: ['./src/styles/custom.css'],
-      defaultLocale: 'en',
+      defaultLocale: 'root',
       locales: {
-        en: { label: 'English' },
+        root: { label: 'English', lang: 'en' },
         'zh-cn': { label: '简体中文', lang: 'zh-CN' },
       },
       sidebar: [
@@ -31,7 +34,7 @@ export default defineConfig({
           label: 'Getting Started',
           translations: { 'zh-CN': '快速开始' },
           items: [
-            { slug: 'index' },
+            { label: 'Introduction', link: '/' },
             { slug: 'features' },
           ],
         },
@@ -47,7 +50,7 @@ export default defineConfig({
           label: 'Channels',
           translations: { 'zh-CN': '频道' },
           items: [
-            { slug: 'channels/index' },
+            { slug: 'channels' },
             { slug: 'channels/cli' },
             { slug: 'channels/telegram' },
           ],
@@ -70,7 +73,7 @@ export default defineConfig({
           label: 'API Reference',
           translations: { 'zh-CN': 'API 参考' },
           items: [
-            { slug: 'api/index' },
+            { slug: 'api' },
             { slug: 'api/hookspecs' },
             { slug: 'api/framework' },
             { slug: 'api/skills' },
@@ -81,7 +84,7 @@ export default defineConfig({
           label: 'Posts',
           translations: { 'zh-CN': '博客' },
           items: [
-            { slug: 'posts/index' },
+            { slug: 'posts' },
             { slug: 'posts/2026-03-01-bub-socialized-evaluation-and-agent-partnership' },
             { slug: 'posts/2025-07-16-baby-bub-bootstrap-milestone' },
           ],

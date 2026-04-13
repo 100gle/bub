@@ -1,5 +1,19 @@
-/* Bub brand colors and custom overrides */
+@import "tailwindcss";
 
+/* Bub brand tokens */
+@theme {
+  --color-accent: #4f7eff;
+  --color-accent-soft: rgba(79, 126, 255, 0.12);
+  --color-bg: #0d0f1a;
+  --color-surface: #1a1d2e;
+  --color-surface-2: #252840;
+  --color-bub-text: #e8eaf6;
+  --color-bub-muted: #888b99;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+}
+
+/* Starlight sidebar color overrides */
 :root {
   --sl-color-accent-low: #1a1f2e;
   --sl-color-accent: #4f7eff;
@@ -12,9 +26,4 @@
   --sl-color-gray-5: #353744;
   --sl-color-gray-6: #1e2030;
   --sl-color-black: #0d0f1a;
-}
-
-/* Hero page overrides – hide Starlight hero on the custom index page */
-.hero-wrapper {
-  padding-block: 0 !important;
 }

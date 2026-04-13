@@ -1,72 +1,33 @@
 ---
-import FeatureCard from "./FeatureCard.astro";
+const features = [
+  { icon: "🔌", title: "Hook-First Architecture", body: "The turn pipeline <em>is</em> hooks. Builtins are ordinary plugins — no magic, no special cases. Override <code>build_prompt</code>, <code>run_model_stream</code>, or <code>render_outbound</code> simply by registering your own." },
+  { icon: "📼", title: "Tape-Based Context", body: "History is append-only facts. Context is assembled on demand — not accumulated, not compressed into lossy summaries. Your working set is always current." },
+  { icon: "📡", title: "Channel-Agnostic Pipeline", body: "CLI and Telegram share the same <code>process_inbound()</code> path. Hooks don't know which channel they're in. Adding a new channel is just implementing one interface." },
+  { icon: "📄", title: "Skills as Documents", body: "Skills are <code>SKILL.md</code> files with validated frontmatter, not code modules with magic registration. Ship them in packages. Override them per-workspace or per-user." },
+  { icon: "🧩", title: "~200-Line Core", body: "The core is intentionally small. Builtins are default plugins you can replace. No privileged internal path. Every default is an example of how to write a plugin." },
+  { icon: "🤝", title: "Socialized Evaluation", body: "Humans and agents share the same operator model. Execution is visible, handoff is safe, and continuation is predictable — even when multiple people and agents are working in the same context." },
+  { icon: "🔧", title: "Plugin Ecosystem", body: "External plugins load via Python entry-points. Later-registered plugins run first. Any builtin behavior can be overridden — or wrapped — without forking the core." },
+  { icon: "🌐", title: "Multi-Channel Gateway", body: "<code>bub gateway</code> starts a channel listener for Telegram and any adapter you add. The same skills, the same context, the same hooks — across every surface." },
+];
 ---
 
-<section class="features-section">
-  <div class="features-header">
-    <p class="section-label">Why Bub</p>
-    <h2 class="section-title">Built for real teams, not demos</h2>
-    <p class="section-sub">
+<section class="max-w-6xl mx-auto px-4 md:px-12 pb-20 md:pb-28">
+  <div class="text-center mb-10">
+    <p class="text-xs font-bold tracking-[0.12em] uppercase text-[#4f7eff] mb-2">Why Bub</p>
+    <h2 class="text-[clamp(1.5rem,3vw,2.2rem)] font-extrabold tracking-tight mb-3">Built for real teams, not demos</h2>
+    <p class="text-[#888b99] max-w-xl mx-auto text-sm md:text-base">
       Bub grew up in multi-person group chats where single-user assumptions
       break immediately. These constraints shaped everything.
     </p>
   </div>
-  <div class="features-grid">
-    <FeatureCard icon="🔌" title="Hook-First Architecture">
-      The turn pipeline <em>is</em> hooks. Builtins are ordinary plugins — no magic,
-      no special cases. Override <code>build_prompt</code>, <code>run_model_stream</code>,
-      or <code>render_outbound</code> simply by registering your own.
-    </FeatureCard>
-    <FeatureCard icon="📼" title="Tape-Based Context">
-      History is append-only facts. Context is assembled on demand —
-      not accumulated, not compressed into lossy summaries.
-      Your working set is always current.
-    </FeatureCard>
-    <FeatureCard icon="📡" title="Channel-Agnostic Pipeline">
-      CLI and Telegram share the same <code>process_inbound()</code> path.
-      Hooks don't know which channel they're in. Adding a new channel is
-      just implementing one interface.
-    </FeatureCard>
-    <FeatureCard icon="📄" title="Skills as Documents">
-      Skills are <code>SKILL.md</code> files with validated frontmatter, not
-      code modules with magic registration. Ship them in packages.
-      Override them per-workspace or per-user.
-    </FeatureCard>
-    <FeatureCard icon="🧩" title="~200-Line Core">
-      The core is intentionally small. Builtins are default plugins you can
-      replace. No privileged internal path. Every default is an example
-      of how to write a plugin.
-    </FeatureCard>
-    <FeatureCard icon="🤝" title="Socialized Evaluation">
-      Humans and agents share the same operator model. Execution is visible,
-      handoff is safe, and continuation is predictable — even when multiple
-      people and agents are working in the same context.
-    </FeatureCard>
-    <FeatureCard icon="🔧" title="Plugin Ecosystem">
-      External plugins load via Python entry-points. Later-registered plugins
-      run first. Any builtin behavior can be overridden — or wrapped —
-      without forking the core.
-    </FeatureCard>
-    <FeatureCard icon="🌐" title="Multi-Channel Gateway">
-      <code>bub gateway</code> starts a channel listener for Telegram and any
-      adapter you add. The same skills, the same context, the same hooks —
-      across every surface.
-    </FeatureCard>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+    {features.map(({ icon, title, body }) => (
+      <div class="bg-[#1a1d2e] border border-[rgba(255,255,255,0.08)] rounded-[10px] p-6 transition-all duration-200 hover:border-[rgba(79,126,255,0.35)] hover:-translate-y-0.5">
+        <div class="text-2xl mb-3">{icon}</div>
+        <h3 class="text-sm font-bold mb-1.5 text-[#e8eaf6]">{title}</h3>
+        <p class="text-[0.875rem] text-[#888b99] leading-[1.55]" set:html={body} />
+      </div>
+    ))}
   </div>
 </section>
-
-<style>
-  .features-section {
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 0 clamp(1rem, 4vw, 3rem) clamp(3rem, 8vw, 5rem);
-  }
-
-  .features-header { text-align: center; margin-bottom: 2.5rem; }
-
-  .features-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1.25rem;
-  }
-</style>

@@ -22,99 +22,22 @@ const {
     <title>{title}</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
-  <body>
+  <body class="bg-[#0d0f1a] text-[#e8eaf6] font-sans min-h-screen antialiased leading-relaxed">
     <slot />
   </body>
 </html>
 
 <style is:global>
+  @import "../styles/custom.css";
+
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  :root {
-    --accent: #4f7eff;
-    --accent-soft: rgba(79, 126, 255, 0.12);
-    --bg: #0d0f1a;
-    --surface: #1a1d2e;
-    --surface-2: #252840;
-    --text: #e8eaf6;
-    --text-muted: #888b99;
-    --border: rgba(255, 255, 255, 0.08);
-    --radius: 10px;
-    --font: system-ui, -apple-system, "Segoe UI", sans-serif;
-    --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
-  }
-
-  @media (prefers-color-scheme: light) {
-    :root {
-      --bg: #f6f7fb;
-      --surface: #ffffff;
-      --surface-2: #eef0f9;
-      --text: #0d0f1a;
-      --text-muted: #545766;
-      --border: rgba(0, 0, 0, 0.08);
-    }
-  }
 
   html { scroll-behavior: smooth; }
 
-  body {
-    font-family: var(--font);
-    background: var(--bg);
-    color: var(--text);
-    line-height: 1.6;
-    min-height: 100vh;
-  }
-
-  /* ── Shared buttons ── */
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.6rem 1.4rem;
-    border-radius: 8px;
-    font-size: 0.95rem;
-    font-weight: 600;
-    text-decoration: none;
-    transition: all 0.2s;
-    cursor: pointer;
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: #fff;
-  }
-
-  .btn-primary:hover { opacity: 0.85; transform: translateY(-1px); }
-
-  .btn-secondary {
-    background: var(--surface-2);
-    color: var(--text);
-    border: 1px solid var(--border);
-  }
-
-  .btn-secondary:hover { background: var(--surface); transform: translateY(-1px); }
-
-  /* ── Shared section typography ── */
-  .section-label {
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin-bottom: 0.5rem;
-  }
-
-  .section-title {
-    font-size: clamp(1.5rem, 3vw, 2.2rem);
-    font-weight: 800;
-    letter-spacing: -0.02em;
-    margin-bottom: 0.75rem;
-  }
-
-  .section-sub {
-    color: var(--text-muted);
-    max-width: 540px;
-    margin: 0 auto 2.5rem;
-    font-size: 1rem;
+  @media (prefers-color-scheme: light) {
+    body {
+      background-color: #f6f7fb;
+      color: #0d0f1a;
+    }
   }
 </style>

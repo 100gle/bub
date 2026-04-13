@@ -1,0 +1,111 @@
+---
+title: Tools API
+description: The @tool decorator, REGISTRY, and name resolution utilities in src/bub/tools.py.
+sidebar:
+  order: 5
+---
+
+`src/bub/tools.py` wraps the [Republic](https://github.com/bubbuild/republic) `Tool` type with automatic
+logging and a central registry. Use `@tool` to expose Python functions as model-callable tools.
+
+## `REGISTRY`
+
+```python
+REGISTRY: dict[str, Tool]
+```
+
+Module-level dict mapping tool names to `Tool` instances. Every function decorated with `@tool`
+is automatically added here at decoration time. Keys are the canonical runtime names.
+
+## `@tool` decorator
+
+```python
+@overload
+def tool(func: Callable, *, name=None, model=None, description=None, context=False) -> Tool: ...
+@overload
+def tool(func=None, *, name=None, model=None, description=None, context=False) -> Callable[[Callable], Tool]: ...
+```
+
+Converts a function into a `Tool` instance, wraps it with structured logging, and registers it in `REGISTRY`.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `func` | `Callable \| None` | — | The function to wrap; omit when using as a decorator factory |
+| `name` | `str \| None` | function name | Override the tool's registered name |
+| `model` | `type[BaseModel] \| None` | `None` | Pydantic model describing the tool's input schema |
+| `description` | `str \| None` | docstring | Human-readable description shown to the model |
+| `context` | `bool` | `False` | If `True`, injects a `context` kwarg at call time (excluded from schema) |
+
+**Usage:**
+
+```python
+from bub.tools import tool
+from pydantic import BaseModel
+
+class Args(BaseModel):
+    query: str
+
+@tool(model=Args, description="Search the web for a query.")
+async def web_search(query: str) -> str:
+    ...
+```
+
+Both sync and async handlers are supported. Logging fires at call start, success, and error.
+
+## Name Resolution
+
+Model-facing tool names replace `.` with `_` to satisfy LLM schema requirements.
+The resolution functions handle both forms transparently.
+
+### `resolve_tool_name()`
+
+```python
+def resolve_tool_name(name: str) -> str | None
+```
+
+Resolves a single name (runtime name or model alias) to the canonical registry key.
+Returns `None` if not found.
+
+### `resolve_tool_names()`
+
+```python
+def resolve_tool_names(
+    names: Iterable[str] | None = None,
+    *,
+    exclude: Iterable[str] = (),
+) -> set[str]
+```
+
+Resolves a collection of names to canonical registry keys.
+
+- `names=None` → all registered tools minus `exclude`.
+- Raises `ValueError` if any name in `names` or `exclude` cannot be resolved.
+
+### `model_tools()`
+
+```python
+def model_tools(tools: Iterable[Tool]) -> list[Tool]
+```
+
+Returns a copy of each `Tool` with `.` replaced by `_` in `name`, ready for submission to an LLM.
+
+## `render_tools_prompt()`
+
+```python
+def render_tools_prompt(tools: Iterable[Tool]) -> str
+```
+
+Renders an `<available_tools>` XML block listing tool names and descriptions for model prompts.
+Returns `""` if `tools` is empty.
+
+## Logging
+
+Every tool invocation automatically logs:
+
+- `tool.call.start name=<name> { arg=value, ... }` — before execution
+- `tool.call.success name=<name> elapsed_time=<ms>` — on success
+- `tool.call.error name=<name> elapsed_time=<ms>` — on exception (with traceback)
+
+Logging is handled by [loguru](https://loguru.readthedocs.io/).
