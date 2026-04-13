@@ -1,0 +1,155 @@
+---
+title: Hook Specs
+description: All pluggy hook contracts — the extension surface of Bub.
+sidebar:
+  order: 2
+---
+
+`BubHookSpecs` in `src/bub/hookspecs.py` defines every hook that plugins can implement.
+All hooks use the `"bub"` namespace.
+
+```python
+from bub import hookimpl   # marker for implementations
+```
+
+---
+
+## Turn Pipeline Hooks
+
+These hooks are called by `BubFramework.process_inbound()` in order.
+
+### `resolve_session`
+
+```python
+@hookspec(firstresult=True)
+def resolve_session(self, message: Envelope) -> str
+```
+
+Resolve the session id for one inbound message. The first non-`None` return value wins. Builtin fallback: `<channel>:<chat_id>`.
+
+### `load_state`
+
+```python
+@hookspec(firstresult=True)
+def load_state(self, message: Envelope, session_id: str) -> State
+```
+
+Load state snapshot for one session. All implementations run; dicts are merged with high-priority plugins winning on key collisions.
+
+### `build_prompt`
+
+```python
+@hookspec(firstresult=True)
+def build_prompt(self, message: Envelope, session_id: str, state: State) -> str | list[dict]
+```
+
+Build the model prompt for this turn. Returns either a plain text string or a list of content parts (OpenAI multimodal format). First non-`None` return value wins.
+
+### `run_model_stream` *(primary)*
+
+```python
+@hookspec(firstresult=True)
+def run_model_stream(self, prompt: str | list[dict], session_id: str, state: State) -> AsyncStreamEvents
+```
+
+Run the model for one turn and return a stream of events. **Use this hook, not `run_model`, for new plugins.**
+
+### `run_model` *(legacy)*
+
+```python
+@hookspec(firstresult=True)
+def run_model(self, prompt: str | list[dict], session_id: str, state: State) -> str
+```
+
+Legacy compatibility hook. The returned text is adapted into a single-chunk stream. Implement either `run_model_stream` or `run_model`, not both.
+
+### `save_state`
+
+```python
+@hookspec
+def save_state(self, session_id: str, state: State, message: Envelope, model_output: str) -> None
+```
+
+Persist state updates after one model turn. Called in a `finally` block — always runs even on error.
+
+### `render_outbound`
+
+```python
+@hookspec
+def render_outbound(self, message: Envelope, session_id: str, state: State, model_output: str) -> list[Envelope]
+```
+
+Render outbound messages from model output. All implementations run; results are concatenated.
+
+### `dispatch_outbound`
+
+```python
+@hookspec
+def dispatch_outbound(self, message: Envelope) -> bool
+```
+
+Dispatch one outbound message to external channel(s). Called once per outbound envelope.
+
+---
+
+## Observer Hooks
+
+### `on_error`
+
+```python
+@hookspec
+def on_error(self, stage: str, error: Exception, message: Envelope | None) -> None
+```
+
+Observe framework errors from any stage. One failing observer does not block others.
+
+---
+
+## Bootstrap Hooks
+
+These hooks are called synchronously during framework or CLI startup. Keep implementations synchronous.
+
+### `register_cli_commands`
+
+```python
+@hookspec
+def register_cli_commands(self, app: Any) -> None
+```
+
+Register CLI commands onto the root Typer application.
+
+### `provide_channels`
+
+```python
+@hookspec
+def provide_channels(self, message_handler: MessageHandler) -> list[Channel]
+```
+
+Provide a list of channel adapters. First channel name wins; later-registered plugins can override builtin channel names.
+
+### `provide_tape_store`
+
+```python
+@hookspec(firstresult=True)
+def provide_tape_store(self) -> TapeStore | AsyncTapeStore
+```
+
+Provide a tape store instance for Bub's conversation recording feature.
+
+### `build_tape_context`
+
+```python
+@hookspec(firstresult=True)
+def build_tape_context(self) -> TapeContext
+```
+
+Build a tape context for the current session.
+
+### `system_prompt`
+
+```python
+@hookspec
+def system_prompt(self, prompt: str | list[dict], state: State) -> str
+```
+
+Provide a system prompt fragment. All implementations run; fragments are concatenated.

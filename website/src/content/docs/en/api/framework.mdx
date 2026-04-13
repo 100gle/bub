@@ -1,0 +1,62 @@
+---
+title: BubFramework
+description: The central runtime class that orchestrates plugins and processes messages.
+sidebar:
+  order: 3
+---
+
+`BubFramework` in `src/bub/framework.py` is the core runtime. It creates the plugin manager, loads plugins, and runs the turn pipeline.
+
+## Constructor
+
+```python
+class BubFramework:
+    def __init__(self) -> None
+```
+
+Sets `self.workspace` to `Path.cwd()` and initializes a pluggy `PluginManager` in the `"bub"` namespace.
+
+## `load_hooks()`
+
+```python
+def load_hooks(self) -> None
+```
+
+Loads builtin plugin first, then discovers and loads external plugins from `importlib.metadata` entry points in `group="bub"`. Tracks per-plugin success/failure in `_plugin_status`.
+
+## `get_channels()`
+
+```python
+def get_channels(self) -> list[Channel]
+```
+
+Calls `provide_channels` via `call_many_sync` and deduplicates by channel name. The first channel name wins, so later-registered (higher-priority) plugins can override builtin channels.
+
+## `process_inbound()`
+
+```python
+async def process_inbound(self, message: Envelope) -> TurnResult
+```
+
+Runs the full turn pipeline for one inbound message:
+
+1. `resolve_session` → session id
+2. Initialize state with `_runtime_workspace`
+3. `load_state` (all implementations, merged)
+4. `build_prompt`
+5. `run_model_stream` (or `run_model` fallback)
+6. For each stream event, `OutboundChannelRouter.dispatch_event(...)`
+7. `save_state` in `finally`
+8. `render_outbound` (all implementations, concatenated)
+9. Fallback outbound if none produced
+10. `dispatch_outbound` per outbound
+
+Catches top-level exceptions, fires `on_error(stage="turn", ...)`, then re-raises.
+
+## `run_cli()`
+
+```python
+def run_cli(self) -> None
+```
+
+Calls `register_cli_commands` on all plugins synchronously, then launches the Typer app.

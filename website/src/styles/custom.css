@@ -1,0 +1,20 @@
+/* Bub brand colors and custom overrides */
+
+:root {
+  --sl-color-accent-low: #1a1f2e;
+  --sl-color-accent: #4f7eff;
+  --sl-color-accent-high: #a5bfff;
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #eceef4;
+  --sl-color-gray-2: #c0c2cc;
+  --sl-color-gray-3: #888b99;
+  --sl-color-gray-4: #545766;
+  --sl-color-gray-5: #353744;
+  --sl-color-gray-6: #1e2030;
+  --sl-color-black: #0d0f1a;
+}
+
+/* Hero page overrides – hide Starlight hero on the custom index page */
+.hero-wrapper {
+  padding-block: 0 !important;
+}

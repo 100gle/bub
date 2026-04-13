@@ -1,0 +1,74 @@
+---
+title: Channels
+description: Channel adapters for CLI, Telegram, and custom endpoints.
+sidebar:
+  order: 1
+---
+
+Bub uses channel adapters to run the same pipeline across different I/O endpoints. Hooks don't know which channel they're in.
+
+## Builtin Channels
+
+- `cli`: local interactive terminal — see [CLI](/en/channels/cli/)
+- `telegram`: Telegram bot — see [Telegram](/en/channels/telegram/)
+
+## Run Modes
+
+Local interactive mode:
+
+```bash
+uv run bub chat
+```
+
+Channel listener mode (all non-`cli` channels by default):
+
+```bash
+uv run bub gateway
+```
+
+Enable only Telegram:
+
+```bash
+uv run bub gateway --enable-channel telegram
+```
+
+## Session Semantics
+
+| Command | Default session id |
+|---|---|
+| `run` | `<channel>:<chat_id>` |
+| `gateway` (Telegram) | `telegram:<chat_id>` |
+| `chat` | `cli_session` (override with `--session-id`) |
+
+`chat` default chat id is `local`.
+
+## Outbound Delivery Surfaces
+
+Channel adapters can receive outbound data in two forms:
+
+- `send(message)`: handles the final rendered outbound message after the turn completes.
+- `on_event(event, message)`: handles raw stream events while the model is still running.
+
+`on_event` is optional. Implement it when a channel can benefit from incremental rendering (typing indicators, partial text display). Channels that don't need streaming can rely entirely on `send()`.
+
+## Adding A Custom Channel
+
+Implement the `Channel` interface from `src/bub/channels/base.py` and register it via `provide_channels`:
+
+```python
+from bub import hookimpl
+from bub.channels.base import Channel
+
+
+class MyChannel(Channel):
+    name = "my-channel"
+
+    async def send(self, message):
+        ...
+
+
+class MyPlugin:
+    @hookimpl
+    def provide_channels(self):
+        return [MyChannel()]
+```
