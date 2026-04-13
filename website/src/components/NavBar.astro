@@ -1,0 +1,79 @@
+---
+interface NavLink {
+  href: string;
+  label: string;
+  cta?: boolean;
+}
+
+const links: NavLink[] = [
+  { href: "/en/", label: "Docs" },
+  { href: "/en/architecture/", label: "Architecture" },
+  { href: "/en/extension-guide/", label: "Extend" },
+  { href: "https://github.com/bubbuild/bub", label: "GitHub" },
+  { href: "/en/", label: "Get Started →", cta: true },
+];
+---
+
+<nav>
+  <a class="nav-logo" href="/">bub</a>
+  <ul class="nav-links">
+    {links.map((link) => (
+      <li>
+        <a href={link.href} class={link.cta ? "btn-nav" : undefined}>
+          {link.label}
+        </a>
+      </li>
+    ))}
+  </ul>
+</nav>
+
+<style>
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 clamp(1rem, 4vw, 3rem);
+    height: 60px;
+    background: color-mix(in srgb, var(--bg) 80%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-logo {
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: var(--accent);
+    text-decoration: none;
+    letter-spacing: -0.02em;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 1.5rem;
+    list-style: none;
+    align-items: center;
+  }
+
+  .nav-links a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.2s;
+  }
+
+  .nav-links a:hover { color: var(--text); }
+
+  .nav-links .btn-nav {
+    background: var(--accent);
+    color: #fff !important;
+    padding: 0.35rem 1rem;
+    border-radius: 6px;
+    font-weight: 600;
+    transition: opacity 0.2s;
+  }
+
+  .nav-links .btn-nav:hover { opacity: 0.85; }
+</style>
