@@ -12,7 +12,7 @@ Core code lives under `src/`:
 - `src/bub/skills.py` / `src/bub/tools.py`: skill discovery and tool registry.
 - `src/skills/`: bundled skills shipped with Bub.
 
-Tests live in `tests/`. Documentation lives in `docs/`.
+Tests live in `tests/`. The legacy MkDocs sources still live in `docs/`, while the new website and docs runtime lives in `website/`.
 
 ## Build, Test, and Development Commands
 
@@ -27,7 +27,7 @@ Tests live in `tests/`. Documentation lives in `docs/`.
 - `uv run pytest -q`: run the main test suite.
 - `just test`: run pytest with doctests enabled.
 - `just check`: lock validation, lint, and typing.
-- `just docs` / `just docs-test`: serve or build docs.
+- `just docs` / `just docs-test`: serve or build the Astro website/docs in `website/`.
 
 ## Coding Style & Naming Conventions
 

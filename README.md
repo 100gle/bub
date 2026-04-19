@@ -136,9 +136,12 @@ Read more: [Context from Tape](https://tape.systems) · [Socialized Evaluation a
 ## Development
 
 ```bash
+just install
 uv run ruff check .
 uv run mypy src
 uv run pytest -q
+just docs
+just docs-test
 ```
 
 See [CONTRIBUTING.md](https://github.com/bubbuild/bub/blob/main/CONTRIBUTING.md).

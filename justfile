@@ -7,6 +7,8 @@ install:
     #!/usr/bin/env bash
     echo "🚀 Creating virtual environment using uv"
     uv sync
+    echo "🚀 Installing website dependencies with pnpm"
+    pnpm --dir website install --frozen-lockfile
     uv run prek install
 
 # Run code quality tools
@@ -55,9 +57,14 @@ build-and-publish: build publish
 # Test if documentation can be built without warnings or errors
 docs-test:
     #!/usr/bin/env bash
-    uv run mkdocs build -s
+    pnpm --dir website build
 
 # Build and serve the documentation
 docs:
     #!/usr/bin/env bash
-    uv run mkdocs serve
+    pnpm --dir website dev --host
+
+# Preview the production documentation build
+docs-preview:
+    #!/usr/bin/env bash
+    pnpm --dir website preview --host
