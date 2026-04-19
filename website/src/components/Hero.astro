@@ -1,0 +1,123 @@
+---
+import { Code } from 'astro-expressive-code/components';
+import Contributors from '@/components/Contributors.astro';
+import Icon from '@/components/ui/Icon.astro';
+import LinkButton from '@/components/ui/LinkButton.astro';
+import type { GitHubContributor } from '@/lib/github';
+
+interface Props {
+  badge?: string;
+  title?: string;
+  description?: string;
+  primaryHref: string;
+  primaryLabel?: string;
+  contributorsLabel?: string;
+  contributors?: GitHubContributor[];
+}
+
+const { badge, title, description, primaryHref, primaryLabel, contributorsLabel, contributors = [] }: Props = Astro.props;
+
+const hasContributors = contributors.length > 0;
+
+const exampleCode = `import bub
+
+@bub.hookimpl
+def build_prompt(session, tape):
+    """Reconstruct context from tape records."""
+    messages = [{"role": "system", "content": session.system}]
+    for record in tape.entries:
+        messages.append({
+            "role": record.role,
+            "content": record.content,
+        })
+    return messages
+
+@bub.hookimpl
+def run_model(messages, config):
+    """Call the LLM — override to swap providers."""
+    return litellm.completion(
+        model=config.model,
+        messages=messages,
+    )`;
+---
+
+<section class="pb-20 pt-14 md:pb-28 md:pt-20" aria-label="Hero">
+  <div class="mx-auto max-w-6xl px-5 md:px-8">
+    <div class="grid items-center gap-12 lg:grid-cols-2 lg:gap-14">
+      <!-- Left: text -->
+      <div class="min-w-0">
+        <!-- Badge -->
+        <div class="inline-flex items-center gap-2 border border-border bg-secondary/40 px-3 py-1.5 font-mono text-[0.6rem] uppercase leading-none tracking-widest text-muted-foreground md:text-[0.8rem]">
+          <Icon name="cpu" size={11} class="opacity-60" aria-hidden="true" />
+          {badge}
+        </div>
+
+        <!-- Slogan -->
+        <div class="mt-8 flex items-start gap-4">
+          <h1 class="text-[clamp(2.2rem,5.5vw,3.8rem)] font-bold leading-[1.1] tracking-tight text-foreground">
+            {title}
+          </h1>
+        </div>
+
+        <p class="mt-6 max-w-xl text-[1.05rem] leading-7 text-muted-foreground">
+          {description}
+        </p>
+
+        <!-- Contributors -->
+        {hasContributors && (
+          <div class="mt-6">
+            <Contributors label={contributorsLabel} contributors={contributors} />
+          </div>
+        )}
+
+        <!-- CTAs -->
+        <div class="mt-6 flex flex-col gap-3 sm:flex-row">
+          <LinkButton href={primaryHref} class="w-full px-6 py-3 sm:w-auto">
+            {primaryLabel}
+            <Icon name="arrowUpRight" size={15} aria-hidden="true" />
+          </LinkButton>
+        </div>
+      </div>
+
+      <!-- Right: code editor -->
+      <div class="hero-terminal min-w-0 overflow-hidden border border-border shadow-[var(--site-shadow-elevated)]" role="img" aria-label="Example Python code showing Bub hook implementations">
+        <Code code={exampleCode} lang="python" frame="code" title="hooks.py" />
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .hero-terminal :global(.expressive-code) {
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    /* Decouple frame colors from Starlight --sl-* variables;
+       use the site's own design tokens so the editor matches
+       the landing page in both light and dark mode. */
+    --ec-brdWd: 0px;
+    --ec-codeBg: var(--card);
+    --ec-frm-edTabBarBg: var(--secondary);
+    --ec-frm-edActTabBg: var(--card);
+    --ec-frm-edActTabFg: var(--muted-foreground);
+    --ec-frm-edBg: var(--card);
+    --ec-frm-edTabBarBrdCol: var(--border);
+    --ec-frm-edTabBarBrdBtmCol: var(--border);
+    --ec-frm-edActTabIndTopCol: transparent;
+    --ec-frm-edActTabIndBtmCol: transparent;
+  }
+  .hero-terminal :global(.expressive-code .frame) {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .hero-terminal :global(.expressive-code .copy) {
+    display: none;
+  }
+  .hero-terminal :global(.expressive-code pre) {
+    font-family: 'JetBrains Mono Variable', ui-monospace, monospace;
+    font-size: 0.78rem;
+    line-height: 1.7;
+    overflow-x: auto;
+  }
+</style>
