@@ -75,23 +75,6 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
             fill="none"
             aria-hidden="true"
           >
-            <defs>
-              <filter id="hook-glow" x="-100%" y="-100%" width="300%" height="300%">
-                <feGaussianBlur stdDeviation="5" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-              <filter id="hook-glow-sm" x="-100%" y="-100%" width="300%" height="300%">
-                <feGaussianBlur stdDeviation="2.5" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-            </defs>
-
             <!-- Desktop: serpentine S-curve paths -->
             <g class="hook-paths-desktop">
               <path
@@ -132,24 +115,9 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
               />
             </g>
 
-            <!-- Traveling dot (main) -->
-            <circle
-              r="5.5"
-              cx="-50" cy="-50"
-              fill="var(--primary)"
-              filter="url(#hook-glow)"
-              visibility="hidden"
-              data-hook-dot
-            />
-            <!-- Trailing dot -->
-            <circle
-              r="3"
-              cx="-50" cy="-50"
-              fill="var(--primary)"
-              filter="url(#hook-glow-sm)"
-              visibility="hidden"
-              data-hook-dot-trail
-            />
+            <!-- Traveling dots avoid animated SVG blur filters; the trail supplies the glow cue. -->
+            <circle r="5.5" cx="-50" cy="-50" fill="var(--primary)" opacity="0" visibility="hidden" data-hook-dot />
+            <circle r="3" cx="-50" cy="-50" fill="var(--primary)" opacity="0" visibility="hidden" data-hook-dot-trail />
           </svg>
 
           <!-- Node cards -->
