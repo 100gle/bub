@@ -330,6 +330,7 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
     if (!root) return;
 
     let stopAnim: (() => void) | null = null;
+    let rootInView = false;
     let activeIdx = -1;
     let currentMobile: boolean | null = null;
 
@@ -339,6 +340,18 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
     if (!dot || !nodeEls.length) return;
 
     const mql = window.matchMedia('(max-width: 639px)');
+    const reduceMotionMql = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    function stopAnimation() {
+      stopAnim?.();
+      stopAnim = null;
+      currentMobile = null;
+    }
+
+    function maybeStartAnimation() {
+      if (!rootInView || document.visibilityState === 'hidden' || reduceMotionMql.matches) return;
+      setupAnimation(mql.matches);
+    }
 
     function setupAnimation(isMobile: boolean) {
       if (isMobile === currentMobile) return;
@@ -423,29 +436,46 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
 
     const handleMediaChange = () => {
       const wasRunning = stopAnim !== null;
-      stopAnim?.();
-      stopAnim = null;
-      currentMobile = null;
-      if (wasRunning) setupAnimation(mql.matches);
+      stopAnimation();
+      if (wasRunning) maybeStartAnimation();
+    };
+
+    const handleMotionPreferenceChange = () => {
+      if (reduceMotionMql.matches) {
+        stopAnimation();
+      } else {
+        maybeStartAnimation();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        stopAnimation();
+      } else {
+        maybeStartAnimation();
+      }
     };
 
     mql.addEventListener('change', handleMediaChange);
+    reduceMotionMql.addEventListener('change', handleMotionPreferenceChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     const stopInView = inView(root, () => {
-      setupAnimation(mql.matches);
+      rootInView = true;
+      maybeStartAnimation();
       return () => {
-        stopAnim?.();
-        stopAnim = null;
-        currentMobile = null;
+        rootInView = false;
+        stopAnimation();
       };
     }, { margin: '-8% 0px' });
 
     hookFlowWindow.__bubHookFlowCleanup = () => {
       stopInView();
       mql.removeEventListener('change', handleMediaChange);
-      stopAnim?.();
-      stopAnim = null;
-      currentMobile = null;
+      reduceMotionMql.removeEventListener('change', handleMotionPreferenceChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      rootInView = false;
+      stopAnimation();
     };
   }
 
