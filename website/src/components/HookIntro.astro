@@ -313,6 +313,14 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
   const TRAIL_LEAD   = 0.018;
   const FADE_ZONE    = 0.06;
   const NEAR_DIST_SQ = 36 * 36;
+  const PATH_SAMPLE_COUNT = 560;
+
+  type PathSample = {
+    x: number;
+    y: number;
+    opacity: number;
+    nearest: number;
+  };
 
   /** Fade envelope: ramps in/out at path ends, 1.0 in the middle. */
   function fade(v: number): number {
@@ -378,6 +386,27 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
         };
       });
 
+      const samples: PathSample[] = Array.from({ length: PATH_SAMPLE_COUNT + 1 }, (_, sampleIndex) => {
+        const v = sampleIndex / PATH_SAMPLE_COUNT;
+        const pt = svgPath.getPointAtLength(v * totalLen);
+        let nearest = -1;
+        let bestSq = NEAR_DIST_SQ;
+
+        for (let i = 0; i < nodeCoords.length; i++) {
+          const dx = pt.x - nodeCoords[i].x;
+          const dy = pt.y - nodeCoords[i].y;
+          const dSq = dx * dx + dy * dy;
+          if (dSq < bestSq) { bestSq = dSq; nearest = i; }
+        }
+
+        return {
+          x: pt.x,
+          y: pt.y,
+          opacity: fade(v),
+          nearest,
+        };
+      });
+
       function highlightNode(idx: number) {
         if (idx === activeIdx) return;
         activeIdx = idx;
@@ -390,34 +419,26 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
         repeatDelay: 0.4,
         ease: 'linear',
         onUpdate(v: number) {
-          const f = fade(v);
+          const sampleIndex = Math.min(PATH_SAMPLE_COUNT, Math.max(0, Math.round(v * PATH_SAMPLE_COUNT)));
+          const sample = samples[sampleIndex];
 
-          const pt = svgPath!.getPointAtLength(v * totalLen);
-          dot!.setAttribute('cx', String(pt.x));
-          dot!.setAttribute('cy', String(pt.y));
-          dot!.setAttribute('opacity', String(f));
+          dot!.setAttribute('cx', String(sample.x));
+          dot!.setAttribute('cy', String(sample.y));
+          dot!.setAttribute('opacity', String(sample.opacity));
           dot!.setAttribute('visibility', 'visible');
 
           if (dotTrail) {
-            const pt2 = svgPath!.getPointAtLength(Math.max(0, v - TRAIL_LEAD) * totalLen);
-            dotTrail.setAttribute('cx', String(pt2.x));
-            dotTrail.setAttribute('cy', String(pt2.y));
-            dotTrail.setAttribute('opacity', String(f * 0.35));
+            const trailIndex = Math.max(0, sampleIndex - Math.round(TRAIL_LEAD * PATH_SAMPLE_COUNT));
+            const trailSample = samples[trailIndex];
+            dotTrail.setAttribute('cx', String(trailSample.x));
+            dotTrail.setAttribute('cy', String(trailSample.y));
+            dotTrail.setAttribute('opacity', String(sample.opacity * 0.35));
             dotTrail.setAttribute('visibility', 'visible');
           }
 
           trail!.style.strokeDashoffset = String(0.14 - v);
-          trail!.style.opacity = String(f * 0.35);
-
-          let nearest = -1;
-          let bestSq = NEAR_DIST_SQ;
-          for (let i = 0; i < nodeCoords.length; i++) {
-            const dx = pt.x - nodeCoords[i].x;
-            const dy = pt.y - nodeCoords[i].y;
-            const dSq = dx * dx + dy * dy;
-            if (dSq < bestSq) { bestSq = dSq; nearest = i; }
-          }
-          highlightNode(nearest);
+          trail!.style.opacity = String(sample.opacity * 0.35);
+          highlightNode(sample.nearest);
         },
       });
 
