@@ -11,6 +11,7 @@ import sharp from 'sharp';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getCollection } from 'astro:content';
+import { normalizeOgRouteFromEntryId } from '@/lib/og-routes';
 
 /* ─── Types ─── */
 
@@ -135,12 +136,6 @@ export async function collectPages(): Promise<Record<string, PageMeta>> {
   const docs = await getCollection('docs');
   const pages: Record<string, PageMeta> = {};
 
-  const normalizeRoute = (route: string) =>
-    route
-      .replace(/\.(md|mdx)$/, '')
-      .replace(/(?:^|\/)index$/, '')
-      .replace(/^\/+|\/+$/g, '') || 'index';
-
   const defaultDescription = (route: string) =>
     route.startsWith('zh-cn/') ? ZH_CN_SITE_DESCRIPTION : SITE_DESCRIPTION;
 
@@ -153,7 +148,7 @@ export async function collectPages(): Promise<Record<string, PageMeta>> {
   }
 
   for (const doc of docs) {
-    const route = normalizeRoute(doc.id);
+    const route = normalizeOgRouteFromEntryId(doc.id);
     pages[route] = {
       title: doc.data.title,
       description: doc.data.description ?? defaultDescription(route),

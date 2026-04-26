@@ -1,10 +1,5 @@
 import { defineRouteMiddleware } from '@astrojs/starlight/route-data';
-
-const DEFAULT_SITE_URL = 'https://bub.build';
-
-function normalizeRoute(pathname: string): string {
-  return pathname.replace(/^\/+|\/+$/g, '') || 'index';
-}
+import { createOgImageUrl, normalizeOgRouteFromPathname } from '@/lib/og-routes';
 
 function upsertMetaTag(
   head: Array<{ tag: string; attrs?: Record<string, unknown> }>,
@@ -26,9 +21,12 @@ function upsertMetaTag(
 }
 
 export const onRequest = defineRouteMiddleware((context) => {
-  const route = normalizeRoute(context.url.pathname);
-  const site = context.site ?? new URL(DEFAULT_SITE_URL);
-  const imageUrl = new URL(`/og/${route}.png`, site).toString();
+  if (!context.site) {
+    throw new Error('Astro site URL must be configured for docs OG image metadata.');
+  }
+
+  const route = normalizeOgRouteFromPathname(context.url.pathname);
+  const imageUrl = createOgImageUrl(route, context.site);
   const { head } = context.locals.starlightRoute;
 
   upsertMetaTag(head, 'property', 'og:image', imageUrl);
