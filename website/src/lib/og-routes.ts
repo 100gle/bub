@@ -1,3 +1,5 @@
+const INDEX_ROUTE_PATTERN = /(?:^|\/)index$/;
+
 function trimRoute(route: string): string {
   return route.replace(/^\/+|\/+$/g, '');
 }
@@ -7,7 +9,9 @@ export function normalizeOgRouteFromPathname(pathname: string): string {
 }
 
 export function normalizeOgRouteFromEntryId(id: string): string {
-  const route = id.replace(/\.(md|mdx)$/, '').replace(/(?:^|\/)index$/, '');
+  // Strip the source file extension and collapse trailing `/index` docs files
+  // onto their directory route so content entry IDs match page URLs.
+  const route = id.replace(/\.(md|mdx)$/, '').replace(INDEX_ROUTE_PATTERN, '');
   return normalizeOgRouteFromPathname(route);
 }
 
