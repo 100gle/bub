@@ -63,10 +63,13 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
       <!-- Right: serpentine flow diagram -->
       <div class="hook-flow relative flex-1" data-hook-flow>
         <div
-          class="hook-flow-inner relative mx-auto"
-          style={`aspect-ratio: ${VB_W} / ${VB_H}; max-width: 420px;`}
+          class="relative mx-auto max-w-[420px]"
+          style={`aspect-ratio: ${VB_W} / ${VB_H};`}
         >
-          <div class="hook-grid" aria-hidden="true"></div>
+          <div
+            class="pointer-events-none absolute inset-0 rounded-[calc(var(--radius)*1.2)] bg-[radial-gradient(circle,var(--site-grid-dot)_1px,transparent_1px)] bg-[length:18px_18px] opacity-18"
+            aria-hidden="true"
+          ></div>
 
           <!-- SVG path layer -->
           <svg
@@ -76,7 +79,7 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
             aria-hidden="true"
           >
             <!-- Desktop: serpentine S-curve paths -->
-            <g class="hook-paths-desktop">
+            <g class="hook-paths-desktop hidden sm:inline">
               <path
                 d={pathD}
                 stroke="var(--border)"
@@ -90,13 +93,15 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
                 stroke-width="2.5"
                 stroke-linecap="round"
                 pathLength="1"
-                class="hook-trail"
+                opacity="0"
+                stroke-dasharray="0.14 0.86"
+                stroke-dashoffset="0.14"
                 data-hook-trail
               />
             </g>
 
             <!-- Mobile: straight vertical path -->
-            <g class="hook-paths-mobile">
+            <g class="hook-paths-mobile sm:hidden">
               <path
                 d={straightPathD}
                 stroke="var(--border)"
@@ -110,15 +115,22 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
                 stroke-width="2.5"
                 stroke-linecap="round"
                 pathLength="1"
-                class="hook-trail"
+                opacity="0"
+                stroke-dasharray="0.14 0.86"
+                stroke-dashoffset="0.14"
                 data-hook-trail-mobile
               />
             </g>
-
-            <!-- Traveling dots avoid animated SVG blur filters; the trail supplies the glow cue. -->
-            <circle r="5.5" cx="-50" cy="-50" fill="var(--primary)" opacity="0" visibility="hidden" data-hook-dot />
-            <circle r="3" cx="-50" cy="-50" fill="var(--primary)" opacity="0" visibility="hidden" data-hook-dot-trail />
           </svg>
+
+          <!-- An HTML layer keeps dot movement on the compositor instead of relaying out the SVG. -->
+          <span
+            class="pointer-events-none invisible absolute inset-0 z-5 origin-top-left opacity-0 will-change-[transform,opacity]"
+            aria-hidden="true"
+            data-hook-dot
+          >
+            <span class="absolute left-0 top-0 block aspect-square w-[1.25%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary"></span>
+          </span>
 
           <!-- Node cards -->
           {hookStages.map((stage, i) => {
@@ -126,13 +138,13 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
             const xPct = (nodeCoords[i].x / VB_W * 100).toFixed(2);
             return (
               <div
-                class="hook-node absolute z-10"
+                class="hook-node absolute z-10 -translate-x-1/2 -translate-y-1/2 left-(--hook-node-left) top-(--hook-node-top) max-sm:left-1/2"
                 data-hook-node={i}
-                style={`top:${yPct}%;left:${xPct}%;transform:translate(-50%,-50%);`}
+                style={`--hook-node-top:${yPct}%;--hook-node-left:${xPct}%;`}
               >
-                <div class="hook-card">
-                  <span class="hook-card-name">{stage.name}()</span>
-                  <span class="hook-card-note">{stage.note}</span>
+                <div class="hook-card flex flex-col gap-px whitespace-nowrap bg-card px-3.5 py-[7px] text-center shadow-(--site-shadow-card) transition-[border-color,box-shadow] duration-400 ease-[ease]">
+                  <span class="hook-card-name font-mono text-[0.7rem] font-semibold leading-[1.3] text-foreground transition-colors duration-350 ease-[ease]">{stage.name}()</span>
+                  <span class="hook-card-note font-mono text-[0.55rem] leading-[1.3] text-muted-foreground opacity-60 transition-[color,opacity] duration-350 ease-[ease]">{stage.note}</span>
                 </div>
               </div>
             );
@@ -163,73 +175,15 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
     );
   }
 
-  .hook-grid {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    border-radius: calc(var(--radius) * 1.2);
-    background-image: radial-gradient(circle, var(--site-grid-dot) 1px, transparent 1px);
-    background-size: 18px 18px;
-    opacity: 0.18;
-  }
-
-  /* ── Trail (hidden until JS activates) ── */
-  .hook-trail {
-    opacity: 0;
-    stroke-dasharray: 0.14 0.86;
-    stroke-dashoffset: 0.14;
-  }
-
-  /* ── Desktop / mobile path toggle (unscoped for SVG) ── */
-  :global(.hook-paths-mobile) { display: none; }
-  @media (max-width: 639px) {
-    :global(.hook-paths-desktop) { display: none; }
-    :global(.hook-paths-mobile)  { display: block; }
-    .hook-node { left: 50% !important; }
-  }
-
-  /* ── Node card — D2 / Mermaid tech-diagram feel ── */
-  .hook-card {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    padding: 7px 14px;
-    background: var(--card);
-    white-space: nowrap;
-    box-shadow: var(--site-shadow-card);
-    text-align: center;
-    transition:
-      border-color 0.4s ease,
-      box-shadow   0.4s ease;
-    will-change: box-shadow;
-  }
-
-  .hook-card-name {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    font-weight: 600;
-    line-height: 1.3;
-    color: var(--foreground);
-    transition: color 0.35s ease;
-  }
-
-  .hook-card-note {
-    font-family: var(--font-mono);
-    font-size: 0.55rem;
-    line-height: 1.3;
-    color: var(--muted-foreground);
-    opacity: 0.6;
-    transition: opacity 0.35s ease, color 0.35s ease;
-  }
-
-  /* ── Active node: ping flash ── */
   .hook-node.active .hook-card {
     border-color: var(--primary);
     animation: ring-ping 2s ease-out forwards;
   }
+
   .hook-node.active .hook-card-name {
     color: var(--primary);
   }
+
   .hook-node.active .hook-card-note {
     opacity: 1;
   }
@@ -278,12 +232,11 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
   const CX_MOBILE = 200;
 
   const CYCLE_DUR    = 7;
-  const TRAIL_LEAD   = 0.018;
   const FADE_ZONE    = 0.06;
   const NEAR_DIST_SQ = 36 * 36;
   const PATH_SAMPLE_COUNT = 560;
-  const HOOK_FRAME_MS = 1000 / 30;
   const REPEAT_DELAY_MS = 400;
+  const TRAIL_FRAME_MS = 1000 / 60;
 
   type PathSample = {
     x: number;
@@ -313,11 +266,10 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
     let currentMobile: boolean | null = null;
 
     const nodeEls  = Array.from(root.querySelectorAll('[data-hook-node]')) as HTMLElement[];
-    const dot      = root.querySelector('[data-hook-dot]') as SVGCircleElement | null;
-    const dotTrail = root.querySelector('[data-hook-dot-trail]') as SVGCircleElement | null;
+    const dot      = root.querySelector('[data-hook-dot]') as HTMLElement | null;
     if (!dot || !nodeEls.length) return;
 
-    const mql = window.matchMedia('(max-width: 639px)');
+    const mql = window.matchMedia('(width < 40rem)');
     const reduceMotionMql = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     function stopAnimation() {
@@ -347,6 +299,9 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
 
       if (!svgPath || !trail) return;
       const totalLen = svgPath.getTotalLength();
+      const viewBox = svgPath.ownerSVGElement?.viewBox.baseVal;
+      const viewBoxWidth = viewBox?.width || 400;
+      const viewBoxHeight = viewBox?.height || 1;
 
       const nodeCoords = nodeEls.map((el) => {
         const idx = Number(el.dataset.hookNode);
@@ -386,49 +341,75 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
       const cycleMs = CYCLE_DUR * 1000;
       const loopMs = cycleMs + REPEAT_DELAY_MS;
       const startedAt = performance.now();
+      let frameId = 0;
+      let dotsVisible = false;
+      let lastTrailUpdate = 0;
 
-      function updateFrame() {
-        const elapsed = (performance.now() - startedAt) % loopMs;
+      function getSample(v: number) {
+        const samplePosition = Math.min(PATH_SAMPLE_COUNT, Math.max(0, v * PATH_SAMPLE_COUNT));
+        const sampleIndex = Math.floor(samplePosition);
+        const nextIndex = Math.min(PATH_SAMPLE_COUNT, sampleIndex + 1);
+        const mix = samplePosition - sampleIndex;
+        const sample = samples[sampleIndex];
+        const next = samples[nextIndex];
+
+        return {
+          x: sample.x + (next.x - sample.x) * mix,
+          y: sample.y + (next.y - sample.y) * mix,
+          opacity: sample.opacity + (next.opacity - sample.opacity) * mix,
+          nearest: samples[Math.round(samplePosition)].nearest,
+        };
+      }
+
+      function getTransform(sample: PathSample) {
+        const x = (sample.x / viewBoxWidth * 100).toFixed(4);
+        const y = (sample.y / viewBoxHeight * 100).toFixed(4);
+        return `translate3d(${x}%, ${y}%, 0)`;
+      }
+
+      function setDotsVisible(visible: boolean) {
+        if (visible === dotsVisible) return;
+        dotsVisible = visible;
+        const visibility = visible ? 'visible' : 'hidden';
+        dot!.style.visibility = visibility;
+      }
+
+      function updateFrame(now: number) {
+        const elapsed = (now - startedAt) % loopMs;
         if (elapsed > cycleMs) {
-          dot!.setAttribute('opacity', '0');
-          dotTrail?.setAttribute('opacity', '0');
-          trail!.style.opacity = '0';
+          if (dotsVisible) {
+            dot!.style.opacity = '0';
+            trail!.style.opacity = '0';
+            setDotsVisible(false);
+          }
           highlightNode(-1);
+          frameId = window.requestAnimationFrame(updateFrame);
           return;
         }
 
         const v = elapsed / cycleMs;
-        const sampleIndex = Math.min(PATH_SAMPLE_COUNT, Math.max(0, Math.round(v * PATH_SAMPLE_COUNT)));
-        const sample = samples[sampleIndex];
+        const sample = getSample(v);
 
-        dot!.setAttribute('cx', String(sample.x));
-        dot!.setAttribute('cy', String(sample.y));
-        dot!.setAttribute('opacity', String(sample.opacity));
-        dot!.setAttribute('visibility', 'visible');
+        dot!.style.transform = getTransform(sample);
+        dot!.style.opacity = String(sample.opacity);
+        setDotsVisible(true);
 
-        if (dotTrail) {
-          const trailIndex = Math.max(0, sampleIndex - Math.round(TRAIL_LEAD * PATH_SAMPLE_COUNT));
-          const trailSample = samples[trailIndex];
-          dotTrail.setAttribute('cx', String(trailSample.x));
-          dotTrail.setAttribute('cy', String(trailSample.y));
-          dotTrail.setAttribute('opacity', String(sample.opacity * 0.35));
-          dotTrail.setAttribute('visibility', 'visible');
+        if (now - lastTrailUpdate >= TRAIL_FRAME_MS) {
+          trail!.style.strokeDashoffset = String(0.14 - v);
+          trail!.style.opacity = String(sample.opacity * 0.35);
+          lastTrailUpdate = now;
         }
-
-        trail!.style.strokeDashoffset = String(0.14 - v);
-        trail!.style.opacity = String(sample.opacity * 0.35);
         highlightNode(sample.nearest);
+        frameId = window.requestAnimationFrame(updateFrame);
       }
 
-      updateFrame();
-      const intervalId = window.setInterval(updateFrame, HOOK_FRAME_MS);
+      frameId = window.requestAnimationFrame(updateFrame);
 
       stopAnim = () => {
-        window.clearInterval(intervalId);
-        dot!.setAttribute('opacity', '0');
-        dot!.setAttribute('visibility', 'hidden');
-        dotTrail?.setAttribute('opacity', '0');
-        dotTrail?.setAttribute('visibility', 'hidden');
+        window.cancelAnimationFrame(frameId);
+        dot!.style.opacity = '0';
+        dot!.style.transform = '';
+        setDotsVisible(false);
         trail!.style.opacity = '0';
         trail!.style.strokeDashoffset = '0.14';
         activeIdx = -1;
