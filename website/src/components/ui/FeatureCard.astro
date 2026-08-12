@@ -1,14 +1,9 @@
 ---
 import Icon from '@/components/ui/Icon.astro';
-
-interface Feature {
-  icon: string;
-  title: string;
-  description: string;
-}
+import type { FeatureItem } from '@/data/landing-page';
 
 interface Props {
-  feature: Feature;
+  feature: FeatureItem;
   wide?: boolean;
   iconSize?: number;
 }
@@ -22,7 +17,7 @@ const {
 
 <div
   class:list={[
-    'feature-card group relative overflow-hidden bg-background p-5 transition-all duration-300 hover:bg-secondary/40 sm:p-8',
+    'feature-card group relative overflow-hidden bg-background p-5 transition-colors duration-300 hover:bg-secondary/40 sm:p-8',
     wide && 'col-span-1 lg:col-span-2',
   ]}
 >

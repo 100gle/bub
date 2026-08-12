@@ -16,6 +16,11 @@ const htmlLangMap: Record<Locale, string> = {
   'zh-cn': 'zh-CN',
 };
 
+const openGraphLocaleMap: Record<Locale, string> = {
+  en: 'en_US',
+  'zh-cn': 'zh_CN',
+};
+
 /** Return every supported locale in route generation order. */
 export function getLocales(): Locale[] {
   return Object.keys(languages) as Locale[];
@@ -30,12 +35,6 @@ export function isLocale(value: string | undefined): value is Locale {
 export function getLangFromUrl(url: URL): Locale {
   const [, seg] = url.pathname.split('/');
   return isLocale(seg) ? seg : defaultLang;
-}
-
-/** Normalize a catch-all route param into a valid locale, or null when unknown. */
-export function getLocaleFromParam(localeParam?: string): Locale | null {
-  if (localeParam === undefined) return defaultLang;
-  return isLocale(localeParam) ? localeParam : null;
 }
 
 /** Map a locale to its route param representation. */
@@ -54,6 +53,16 @@ export function getStaticLocalePaths(): StaticLocalePath[] {
 /** Return the BCP-47 lang tag for an HTML `lang` attribute. */
 export function getHtmlLang(locale: Locale): string {
   return htmlLangMap[locale] ?? locale;
+}
+
+/** Return the locale format used by Open Graph metadata. */
+export function getOpenGraphLocale(locale: Locale): string {
+  return openGraphLocaleMap[locale];
+}
+
+/** Return the other supported locale. */
+export function getAlternateLocale(locale: Locale): Locale {
+  return getLocales().find((candidate) => candidate !== locale) ?? defaultLang;
 }
 
 /** Return a `t()` function bound to the given locale. */
@@ -93,6 +102,11 @@ export function getPostsHref(locale: Locale): string {
   return getLocalizedPath('/posts/', locale);
 }
 
+/** Build the locale-aware RSS feed href. */
+export function getPostsRssHref(locale: Locale): string {
+  return getLocalizedPath('/rss.xml', locale);
+}
+
 /** Build the locale-aware single post href. */
 export function getPostHref(locale: Locale, slug: string): string {
   return getLocalizedPath(`/posts/${slug}/`, locale);
@@ -115,7 +129,7 @@ export function formatPostDate(date: Date, locale: Locale, month: PostDateLength
 
 /** Compute the "switch language" href for a given pathname. */
 export function getAlternateLocaleHref(pathname: string, currentLocale: Locale): string {
-  const otherLocale = getLocales().find((locale) => locale !== currentLocale) ?? defaultLang;
+  const otherLocale = getAlternateLocale(currentLocale);
 
   if (currentLocale === defaultLang) {
     return getLocalizedPath(pathname, otherLocale);
@@ -141,11 +155,15 @@ export interface NavProps {
   githubLabel: string;
   menuLabel: string;
   closeLabel: string;
+  primaryLabel: string;
+  mobileLabel: string;
+  languageLang: string;
 }
 
 /** Build NavBar props from locale + current pathname. */
 export function getNavProps(locale: Locale, pathname: string): NavProps {
   const t = useTranslations(locale);
+  const otherLocale = getAlternateLocale(locale);
 
   return {
     docsHref: getDocsHref(locale),
@@ -159,5 +177,8 @@ export function getNavProps(locale: Locale, pathname: string): NavProps {
     githubLabel: t('nav.github'),
     menuLabel: t('nav.menu'),
     closeLabel: t('nav.close'),
+    primaryLabel: t('nav.primary'),
+    mobileLabel: t('nav.mobile'),
+    languageLang: getHtmlLang(otherLocale),
   };
 }

@@ -1,39 +1,12 @@
 // @ts-check
 import { fileURLToPath } from 'node:url';
-import { defineConfig, envField } from 'astro/config';
+import { defineConfig } from 'astro/config';
 import tailwindcss from '@tailwindcss/vite';
 import starlight from '@astrojs/starlight';
-import cloudflare from '@astrojs/cloudflare';
 import mermaid from 'astro-mermaid';
 
-const astro_image_mode =
-  process.env.BUB_ASTRO_IMAGE_MODE ?? (process.argv.includes('dev') ? 'dev' : 'build');
-
-/** @type {import('@astrojs/cloudflare').Options['imageService']} */
-const image_service =
-  astro_image_mode === 'dev' ? 'cloudflare' : { build: 'compile', runtime: 'passthrough' };
-
 export default defineConfig({
-  // SSG by default; landing pages opt-in to SSR via `export const prerender = false`.
-  adapter: cloudflare({
-    // Prefer an explicit mode from the calling command so local docs workflows
-    // stay deterministic. Fall back to the Astro command name for direct
-    // `pnpm dev` / `pnpm build` usage inside `website/`.
-    imageService: image_service,
-    prerenderEnvironment: 'node',
-  }),
   site: process.env.SITE_URL ?? 'https://bub.build',
-  env: {
-    schema: {
-      SITE_URL: envField.string({
-        context: 'client',
-        access: 'public',
-        default: 'https://bub.build',
-        optional: true,
-        url: true,
-      }),
-    },
-  },
   vite: {
     plugins: [tailwindcss()],
     resolve: {

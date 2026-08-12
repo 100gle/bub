@@ -1,14 +1,10 @@
 ---
 import SectionHeading from '@/components/ui/SectionHeading.astro';
+import type { HookIntroData } from '@/data/landing-page';
 
-interface Props {
-  eyebrow?: string;
-  heading?: string;
-  description?: string[];
-  hookStages?: { name: string; note: string }[];
-}
+interface Props extends HookIntroData {}
 
-const { eyebrow, heading, description = [], hookStages = [] }: Props = Astro.props;
+const { eyebrow, heading, description, hookStages }: Props = Astro.props;
 
 /* ── SVG coordinate system ── */
 const SPACING = 62;
@@ -45,7 +41,7 @@ const CX = VB_W / 2;
 const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
 ---
 
-<section class="relative overflow-hidden py-20 md:py-28" data-reveal aria-label="Hook architecture">
+<section class="relative overflow-hidden py-20 md:py-28" data-reveal aria-labelledby="hook-intro-heading">
   <div class="relative mx-auto max-w-6xl px-5 md:px-8">
     <div class="flex flex-col gap-12 md:flex-row md:items-start md:gap-16 lg:gap-24">
 
@@ -54,6 +50,7 @@ const straightPathD = `M ${CX} ${-44} L ${CX} ${VB_H + 44}`;
         <SectionHeading
           eyebrow={eyebrow}
           heading={heading}
+          headingId="hook-intro-heading"
           descriptions={description}
           descriptionsClass="mt-5"
           class="mb-0 max-w-none"

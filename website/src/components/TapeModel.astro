@@ -1,16 +1,11 @@
 ---
 import Icon from '@/components/ui/Icon.astro';
 import SectionHeading from '@/components/ui/SectionHeading.astro';
-import { useTranslations, getLangFromUrl } from '@/i18n/utils';
+import type { TapeModelData } from '@/data/landing-page';
 
+interface Props extends TapeModelData {}
 
-interface Props {
-  eyebrow?: string;
-  heading?: string;
-  description?: string[];
-}
-
-const { eyebrow, heading, description = [] }: Props = Astro.props;
+const { eyebrow, heading, description, labels }: Props = Astro.props;
 
 type TapeEntry = {
   ts: string;
@@ -36,10 +31,9 @@ const tapeEntries: TapeEntry[] = [
 const entryCount = tapeEntries.filter(e => e.kind === 'event').length;
 const anchorCount = tapeEntries.filter(e => e.kind === 'anchor').length;
 const COL_COUNT = 5;
-const t = useTranslations(getLangFromUrl(Astro.url));
 ---
 
-<section class="relative py-20 md:py-28" data-reveal aria-label="Tape context model">
+<section class="relative py-20 md:py-28" data-reveal aria-labelledby="tape-model-heading">
   <div class="mx-auto max-w-6xl px-5 md:px-8">
     <div class="grid items-start gap-10 lg:grid-cols-2 lg:gap-16">
 
@@ -55,7 +49,7 @@ const t = useTranslations(getLangFromUrl(Astro.url));
                 class="tape-live-dot inline-block h-[6px] w-[6px] rounded-full bg-[var(--site-accent-live)] shadow-[0_0_6px_var(--site-accent-live-shadow)]"
                 aria-hidden="true"
               ></span>
-              <span class="tape-live-label font-mono text-[0.55rem] uppercase tracking-wider">live</span>
+              <span class="tape-live-label font-mono text-[0.55rem] uppercase tracking-wider">{labels.live}</span>
             </div>
           </div>
 
@@ -67,7 +61,8 @@ const t = useTranslations(getLangFromUrl(Astro.url));
               aria-hidden="true"
             ></div>
 
-            <table class="w-full border-collapse font-mono text-[0.62rem] leading-[1.5]" role="log" aria-label="Tape entries">
+            <table class="w-full border-collapse font-mono text-[0.62rem] leading-[1.5]">
+              <caption class="sr-only">{labels.caption}</caption>
               <colgroup>
                 <col class="w-[66px] max-sm:hidden" />
                 <col class="w-[18px]" />
@@ -77,11 +72,11 @@ const t = useTranslations(getLangFromUrl(Astro.url));
               </colgroup>
               <thead>
                 <tr data-tape-header class="opacity-0">
-                  <th scope="col" class="px-[0.65rem] py-2 text-[0.5rem] font-medium uppercase tracking-[0.1em] text-left whitespace-nowrap text-muted-foreground opacity-40 border-b border-border max-sm:hidden">time</th>
-                  <th scope="col" class="px-[0.65rem] py-2 text-[0.5rem] font-medium uppercase tracking-[0.1em] text-left whitespace-nowrap text-muted-foreground opacity-40 border-b border-border" aria-label="kind"></th>
-                  <th scope="col" class="px-[0.65rem] py-2 text-[0.5rem] font-medium uppercase tracking-[0.1em] text-left whitespace-nowrap text-muted-foreground opacity-40 border-b border-border">op</th>
-                  <th scope="col" class="px-[0.65rem] py-2 text-[0.5rem] font-medium uppercase tracking-[0.1em] text-left whitespace-nowrap text-muted-foreground opacity-40 border-b border-border max-sm:hidden">key</th>
-                  <th scope="col" class="px-[0.65rem] py-2 text-[0.5rem] font-medium uppercase tracking-[0.1em] text-left whitespace-nowrap text-muted-foreground opacity-40 border-b border-border">payload</th>
+                  <th scope="col" class="px-[0.65rem] py-2 text-[0.5rem] font-medium uppercase tracking-[0.1em] text-left whitespace-nowrap text-muted-foreground opacity-40 border-b border-border max-sm:hidden">{labels.time}</th>
+                  <th scope="col" class="px-[0.65rem] py-2 text-[0.5rem] font-medium uppercase tracking-[0.1em] text-left whitespace-nowrap text-muted-foreground opacity-40 border-b border-border" aria-label={labels.kind}></th>
+                  <th scope="col" class="px-[0.65rem] py-2 text-[0.5rem] font-medium uppercase tracking-[0.1em] text-left whitespace-nowrap text-muted-foreground opacity-40 border-b border-border">{labels.operation}</th>
+                  <th scope="col" class="px-[0.65rem] py-2 text-[0.5rem] font-medium uppercase tracking-[0.1em] text-left whitespace-nowrap text-muted-foreground opacity-40 border-b border-border max-sm:hidden">{labels.key}</th>
+                  <th scope="col" class="px-[0.65rem] py-2 text-[0.5rem] font-medium uppercase tracking-[0.1em] text-left whitespace-nowrap text-muted-foreground opacity-40 border-b border-border">{labels.payload}</th>
                 </tr>
               </thead>
               <tbody>
@@ -140,7 +135,7 @@ const t = useTranslations(getLangFromUrl(Astro.url));
           <!-- Live cursor -->
           <div class="flex items-center gap-2 px-[0.65rem] py-[0.45rem] opacity-0" data-tape-cursor>
             <span class="tape-cursor-line inline-block w-[1.5px] h-[13px] bg-primary" aria-hidden="true"></span>
-            <span class="font-mono text-[0.5rem] text-primary/40">awaiting next entry…</span>
+            <span class="font-mono text-[0.5rem] text-primary/40">{labels.awaitingEntry}</span>
           </div>
 
           <!-- View assembly indicator -->
@@ -150,12 +145,12 @@ const t = useTranslations(getLangFromUrl(Astro.url));
           >
             <div class="flex items-center gap-[0.35rem]">
               <Icon name="layers" size={11} class="text-primary/70" aria-hidden="true" />
-              <span class="font-semibold uppercase tracking-[0.06em] text-primary/70">view assembled</span>
+              <span class="font-semibold uppercase tracking-[0.06em] text-primary/70">{labels.viewAssembled}</span>
             </div>
             <div class="flex items-center gap-[0.35rem] text-muted-foreground opacity-55">
-              <span>{entryCount} facts</span>
+              <span>{entryCount} {labels.facts}</span>
               <span class="opacity-40">·</span>
-              <span>{anchorCount} anchor</span>
+              <span>{anchorCount} {labels.anchor}</span>
               <span class="opacity-40">→</span>
               <span class="text-primary opacity-80">4.2k tokens</span>
             </div>
@@ -163,10 +158,10 @@ const t = useTranslations(getLangFromUrl(Astro.url));
 
           <!-- Status bar -->
           <div class="flex flex-wrap items-center gap-2 px-3 py-[0.55rem] border-t border-border font-mono">
-            <span class="inline-flex items-center bg-[var(--site-accent-signal-bg-strong)] px-[0.4rem] py-[0.1rem] text-[0.56rem] font-bold text-primary">{entryCount + anchorCount} entries</span>
-            <span class="text-[0.56rem] text-muted-foreground opacity-55">{anchorCount} anchor</span>
+            <span class="inline-flex items-center bg-[var(--site-accent-signal-bg-strong)] px-[0.4rem] py-[0.1rem] text-[0.56rem] font-bold text-primary">{entryCount + anchorCount} {labels.entries}</span>
+            <span class="text-[0.56rem] text-muted-foreground opacity-55">{anchorCount} {labels.anchor}</span>
             <span class="text-[0.52rem] text-muted-foreground opacity-35">·</span>
-            <span class="text-[0.52rem] text-muted-foreground opacity-35">append-only</span>
+            <span class="text-[0.52rem] text-muted-foreground opacity-35">{labels.appendOnly}</span>
           </div>
         </div>
       </div>
@@ -176,6 +171,7 @@ const t = useTranslations(getLangFromUrl(Astro.url));
         <SectionHeading
           eyebrow={eyebrow}
           heading={heading}
+          headingId="tape-model-heading"
           descriptions={description}
           descriptionsClass="mt-5"
           class="mb-0 max-w-none"
@@ -186,7 +182,7 @@ const t = useTranslations(getLangFromUrl(Astro.url));
           rel="noreferrer"
           class="group mt-6 inline-flex items-center gap-1.5 font-mono text-[0.7rem] text-muted-foreground transition-colors hover:text-primary"
         >
-          {t('tapeModel.learnMore')}
+          {labels.learnMore}
           <Icon name="arrowUpRight" size={12} class="opacity-50 transition-opacity group-hover:opacity-100" aria-hidden="true" />
         </a>
       </div>
@@ -194,6 +190,18 @@ const t = useTranslations(getLangFromUrl(Astro.url));
     </div>
   </div>
 </section>
+
+<noscript>
+  <style is:inline>
+    [data-tape-header],
+    [data-tape-row],
+    [data-tape-view],
+    [data-tape-cursor] {
+      opacity: 1 !important;
+      transform: none !important;
+    }
+  </style>
+</noscript>
 
 <style>
   /* ── Scan line gradient (complex — kept out of Tailwind arbitrary values) ── */
@@ -267,8 +275,9 @@ const t = useTranslations(getLangFromUrl(Astro.url));
     tapeAnimationWindow.__bubTapeAnimationCleanup?.();
     tapeAnimationWindow.__bubTapeAnimationCleanup = undefined;
 
-    const viz = document.querySelector('[data-tape-viz]');
+    const viz = document.querySelector<HTMLElement>('[data-tape-viz]');
     if (!viz) return;
+    const root = viz;
 
     const header = viz.querySelector('[data-tape-header]') as HTMLElement | null;
     const rows = Array.from(viz.querySelectorAll('[data-tape-row]')) as HTMLElement[];
@@ -286,11 +295,14 @@ const t = useTranslations(getLangFromUrl(Astro.url));
     const PAUSE = 1;
 
     let active = false;
+    let inViewport = false;
     let timers: number[] = [];
     let controls: Array<{ stop: () => void }> = [];
+    let stopInView: (() => void) | undefined;
+    const reduceMotionMql = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     function setRunning(running: boolean) {
-      viz.toggleAttribute('data-tape-running', running);
+      root.toggleAttribute('data-tape-running', running);
     }
 
     function sched(fn: () => void, ms: number) {
@@ -337,6 +349,24 @@ const t = useTranslations(getLangFromUrl(Astro.url));
       }
     }
 
+    function showStaticState() {
+      stopAnimations();
+      clearTimers();
+      setRunning(false);
+      if (header) header.style.opacity = '1';
+      rows.forEach((row) => {
+        row.style.opacity = '1';
+        row.style.transform = '';
+        row.classList.remove('tape-row-highlight', 'tape-anchor-glow');
+      });
+      if (viewEl) {
+        viewEl.style.opacity = '1';
+        viewEl.style.transform = '';
+      }
+      if (cursor) cursor.style.opacity = '1';
+      if (scan) scan.style.opacity = '0';
+    }
+
     function cycle() {
       if (!active) return;
       clearTimers();
@@ -345,7 +375,7 @@ const t = useTranslations(getLangFromUrl(Astro.url));
 
       // ─ Phase 1: header
       sched(() => {
-        if (header) runAnimation(header, { opacity: [0, 1] }, { duration: 0.3, ease: 'ease-out' });
+        if (header) runAnimation(header, { opacity: [0, 1] }, { duration: 0.3, ease: 'easeOut' });
       }, 60);
 
       // ─ Phase 2: staggered rows
@@ -353,7 +383,7 @@ const t = useTranslations(getLangFromUrl(Astro.url));
         runAnimation(
           rows,
           { opacity: [0, 1], y: [10, 0] },
-          { delay: stagger(GAP, { start: BASE }), duration: 0.4, ease: [0.22, 1, 0.36, 1] }
+          { delay: stagger(GAP, { startDelay: BASE }), duration: 0.4, ease: [0.22, 1, 0.36, 1] }
         );
       }, 80);
 
@@ -375,7 +405,7 @@ const t = useTranslations(getLangFromUrl(Astro.url));
         if (row.dataset.corrects) {
           sched(() => {
             const key = row.dataset.corrects!;
-            const superseded = viz.querySelector(`[data-key="${key}"]`) as HTMLElement | null;
+            const superseded = root.querySelector(`[data-key="${key}"]`) as HTMLElement | null;
             if (superseded) superseded.classList.add('tape-row-superseded');
             row.classList.add('tape-row-highlight');
             sched(() => row.classList.remove('tape-row-highlight'), 1400);
@@ -392,7 +422,7 @@ const t = useTranslations(getLangFromUrl(Astro.url));
 
       // ─ Phase 5: cursor
       sched(() => {
-        if (cursor) runAnimation(cursor, { opacity: [0, 1] }, { duration: 0.4, ease: 'ease-out' });
+        if (cursor) runAnimation(cursor, { opacity: [0, 1] }, { duration: 0.4, ease: 'easeOut' });
       }, (ENTRANCE_END + 0.5) * 1000);
 
       // ─ Phase 6: view assembly
@@ -404,23 +434,62 @@ const t = useTranslations(getLangFromUrl(Astro.url));
       const fadeAt = (ENTRANCE_END + 1.8 + HOLD) * 1000;
       sched(() => {
         const all = [header, ...rows, viewEl, cursor].filter(Boolean) as HTMLElement[];
-        runAnimation(all, { opacity: 0 }, { duration: FADE, ease: 'ease-in' });
+        runAnimation(all, { opacity: 0 }, { duration: FADE, ease: 'easeIn' });
         sched(() => cycle(), (FADE + PAUSE) * 1000);
       }, fadeAt);
     }
 
-    const stopInView = inView(viz, () => {
-      active = true;
-      cycle();
-      return () => {
-        active = false;
-        clearTimers();
-        reset();
-      };
-    }, { margin: '-20% 0px -20% 0px' });
+    function configureForMotionPreference() {
+      stopInView?.();
+      stopInView = undefined;
+      active = false;
+      inViewport = false;
+      clearTimers();
+
+      if (reduceMotionMql.matches) {
+        showStaticState();
+        return;
+      }
+
+      reset();
+      stopInView = inView(root, () => {
+        inViewport = true;
+        if (document.visibilityState !== 'hidden') {
+          active = true;
+          cycle();
+        }
+        return () => {
+          inViewport = false;
+          active = false;
+          clearTimers();
+          reset();
+        };
+      }, { margin: '-20% 0px -20% 0px' });
+    }
+
+    function handleVisibilityChange() {
+      if (reduceMotionMql.matches || !inViewport) return;
+
+      active = false;
+      clearTimers();
+      stopAnimations();
+      setRunning(false);
+
+      if (document.visibilityState !== 'hidden') {
+        active = true;
+        cycle();
+      }
+    }
+
+    reduceMotionMql.addEventListener('change', configureForMotionPreference);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    configureForMotionPreference();
 
     tapeAnimationWindow.__bubTapeAnimationCleanup = () => {
-      stopInView();
+      stopInView?.();
+      reduceMotionMql.removeEventListener('change', configureForMotionPreference);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      inViewport = false;
       active = false;
       clearTimers();
       reset();

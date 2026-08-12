@@ -1,0 +1,62 @@
+<script>
+  import { inView } from 'motion';
+  import { animate } from 'motion/mini';
+
+  type RevealWindow = Window & {
+    __bubRevealBound?: boolean;
+    __bubRevealCleanups?: Array<() => void>;
+  };
+
+  function initScrollReveals() {
+    const revealWindow = window as RevealWindow;
+    revealWindow.__bubRevealCleanups?.forEach((cleanup) => cleanup());
+    revealWindow.__bubRevealCleanups = [];
+
+    const revealElements = Array.from(document.querySelectorAll<HTMLElement>('[data-reveal]'));
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      revealElements.forEach((element) => {
+        element.style.opacity = '';
+        element.style.transform = '';
+      });
+      return;
+    }
+
+    revealElements.forEach((element) => {
+      element.style.opacity = '0';
+      element.style.transform = 'translateY(24px)';
+
+      const stopInView = inView(
+        element,
+        () => {
+          const keyframes = {
+            opacity: [0, 1],
+            transform: ['translateY(24px)', 'translateY(0)'],
+          };
+          const controls = animate(element, keyframes, {
+            duration: 0.6,
+            ease: [0.25, 0.1, 0.25, 1],
+          });
+          return () => {
+            controls.stop();
+            element.style.opacity = '0';
+            element.style.transform = 'translateY(24px)';
+          };
+        },
+        { margin: '0px 0px -10% 0px' },
+      );
+
+      revealWindow.__bubRevealCleanups?.push(() => {
+        stopInView();
+        element.style.opacity = '';
+        element.style.transform = '';
+      });
+    });
+  }
+
+  const revealWindow = window as RevealWindow;
+  requestAnimationFrame(initScrollReveals);
+  if (!revealWindow.__bubRevealBound) {
+    document.addEventListener('astro:page-load', () => requestAnimationFrame(initScrollReveals));
+    revealWindow.__bubRevealBound = true;
+  }
+</script>

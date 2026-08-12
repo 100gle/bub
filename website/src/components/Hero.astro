@@ -2,20 +2,24 @@
 import Contributors from '@/components/Contributors.astro';
 import Icon from '@/components/ui/Icon.astro';
 import LinkButton from '@/components/ui/LinkButton.astro';
+import type { HeroData } from '@/data/landing-page';
 import type { GitHubContributor } from '@/lib/github';
 import { Code } from 'astro:components';
 
-interface Props {
-  badge?: string;
-  title?: string;
-  description?: string;
-  primaryHref: string;
-  primaryLabel?: string;
-  contributorsLabel?: string;
+interface Props extends HeroData {
   contributors?: GitHubContributor[];
 }
 
-const { badge, title, description, primaryHref, primaryLabel, contributorsLabel, contributors = [] }: Props = Astro.props;
+const {
+  badge,
+  title,
+  description,
+  primaryHref,
+  primaryLabel,
+  contributorsLabel,
+  contributorsViewAllLabel,
+  contributors = [],
+}: Props = Astro.props;
 
 const hasContributors = contributors.length > 0;
 
@@ -84,7 +88,23 @@ const heroCodeScopes = {
   ],
 };
 
-function createHeroCodeTheme(name, type, palette) {
+type HeroCodePalette = {
+  background: string;
+  foreground: string;
+  keyword: string;
+  decorator: string;
+  functionName: string;
+  callable: string;
+  parameter: string;
+  string: string;
+  punctuation: string;
+};
+
+function createHeroCodeTheme(
+  name: string,
+  type: 'light' | 'dark',
+  palette: HeroCodePalette,
+) {
   return {
     name,
     type,
@@ -171,7 +191,7 @@ const heroCodeThemes = {
 };
 ---
 
-<section class="pb-20 pt-14 md:pb-28 md:pt-20" aria-label="Hero">
+<section class="pb-20 pt-14 md:pb-28 md:pt-20" aria-labelledby="hero-heading">
   <div class="mx-auto max-w-6xl px-5 md:px-8">
     <div class="grid items-center gap-12 lg:grid-cols-2 lg:gap-14">
       <!-- Left: text -->
@@ -184,7 +204,7 @@ const heroCodeThemes = {
 
         <!-- Slogan -->
         <div class="mt-8 flex items-start gap-4">
-          <h1 class="text-[clamp(2.2rem,5.5vw,3.8rem)] font-bold leading-[1.1] tracking-tight text-foreground">
+          <h1 id="hero-heading" class="text-[clamp(2.2rem,5.5vw,3.8rem)] font-bold leading-[1.1] tracking-tight text-foreground">
             {title}
           </h1>
         </div>
@@ -196,7 +216,11 @@ const heroCodeThemes = {
         <!-- Contributors -->
         {hasContributors && (
           <div class="mt-6">
-            <Contributors label={contributorsLabel} contributors={contributors} />
+            <Contributors
+              label={contributorsLabel}
+              viewAllLabel={contributorsViewAllLabel}
+              contributors={contributors}
+            />
           </div>
         )}
 
@@ -210,7 +234,7 @@ const heroCodeThemes = {
       </div>
 
       <!-- Right: code editor -->
-      <div class="hero-terminal min-w-0 overflow-hidden border border-border shadow-[var(--site-shadow-elevated)]" role="img" aria-label="Example Python code showing Bub hook implementations">
+      <div class="hero-terminal min-w-0 overflow-hidden border border-border shadow-[var(--site-shadow-elevated)]">
         <div class="expressive-code">
           <figure class="frame has-title not-content">
             <figcaption class="header">

@@ -1,4 +1,6 @@
 // ---------------------------------------------------------------------------
+
+import type { IconName } from '@/lib/icons';
 // Landing-page structured data — single source of truth for all landing-page
 // content. Locale-specific text (nav, footer, 404, etc.) lives in i18n/ui.ts.
 // Testimonial items are loaded separately from src/data/userwall.yml via the
@@ -6,54 +8,81 @@
 // ---------------------------------------------------------------------------
 
 export type HeroData = {
-  badge?: string;
-  title?: string;
-  description?: string;
+  badge: string;
+  title: string;
+  description: string;
   primaryHref: string;
-  primaryLabel?: string;
-  contributorsLabel?: string;
+  primaryLabel: string;
+  contributorsLabel: string;
+  contributorsViewAllLabel: string;
 };
 
-export type FeatureItem = { icon: string; title: string; description: string };
+export type FeatureItem = { icon: IconName; title: string; description: string };
 
 export type FeaturesData = {
-  eyebrow?: string;
-  heading?: string;
-  subheading?: string;
-  features?: FeatureItem[];
+  eyebrow: string;
+  heading: string;
+  subheading: string;
+  features: [FeatureItem, FeatureItem, FeatureItem, FeatureItem, FeatureItem, FeatureItem];
 };
 
 export type HookIntroData = {
-  eyebrow?: string;
-  heading?: string;
-  description?: string[];
-  hookStages?: { name: string; note: string }[];
+  eyebrow: string;
+  heading: string;
+  description: string[];
+  hookStages: { name: string; note: string }[];
 };
 
 export type TapeModelData = {
-  eyebrow?: string;
-  heading?: string;
-  description?: string[];
+  eyebrow: string;
+  heading: string;
+  description: string[];
+  labels: {
+    caption: string;
+    live: string;
+    time: string;
+    kind: string;
+    operation: string;
+    key: string;
+    payload: string;
+    awaitingEntry: string;
+    viewAssembled: string;
+    facts: string;
+    anchor: string;
+    entries: string;
+    appendOnly: string;
+    learnMore: string;
+  };
+};
+
+export type TestimonialItem = {
+  name: string;
+  handle: string;
+  text: string;
+  avatar?: string;
+  platform?: 'x' | 'github';
 };
 
 export type TestimonialsData = {
-  eyebrow?: string;
-  heading?: string;
-  /** Populated at runtime from the userwall content collection. */
-  testimonials?: { name: string; handle: string; text: string; avatar?: string; platform?: string }[];
+  eyebrow: string;
+  heading: string;
+  playLabel: string;
+  pauseLabel: string;
+  /** Populated at build time from the userwall content collection. */
+  testimonials?: TestimonialItem[];
 };
 
 export type LandingPageData = {
   hero: HeroData;
-  features?: FeaturesData;
-  hookIntro?: HookIntroData;
-  tapeModel?: TapeModelData;
-  testimonials?: TestimonialsData;
+  features: FeaturesData;
+  hookIntro: HookIntroData;
+  tapeModel: TapeModelData;
+  testimonials: TestimonialsData;
 };
 
 export type LandingLocale = 'en' | 'zh-cn';
 
-const landingPageData: Record<LandingLocale, LandingPageData> = {
+const landingPageData = {
   en: {
     hero: {
       badge: 'Hook-first · Tape-driven · Channel-agnostic',
@@ -63,6 +92,7 @@ const landingPageData: Record<LandingLocale, LandingPageData> = {
       primaryHref: '/docs/getting-started/',
       primaryLabel: 'Get Started',
       contributorsLabel: 'Developed by contributors worldwide',
+      contributorsViewAllLabel: 'View all contributors on GitHub',
     },
     features: {
       eyebrow: 'Features',
@@ -131,10 +161,28 @@ const landingPageData: Record<LandingLocale, LandingPageData> = {
         "Context isn't accumulated in session state. It's reconstructed from an append-only tape — a sequence of immutable facts. Entries record what happened; anchors mark phase boundaries and carry structured state.",
         'Corrections append new facts that supersede old ones — never overwrite. Views are assembled from anchors forward, not inherited wholesale. Every decision is auditable, replayable, and forkable.',
       ],
+      labels: {
+        caption: 'Example tape entries showing events, anchors, and corrections',
+        live: 'live',
+        time: 'time',
+        kind: 'kind',
+        operation: 'op',
+        key: 'key',
+        payload: 'payload',
+        awaitingEntry: 'awaiting next entry…',
+        viewAssembled: 'view assembled',
+        facts: 'facts',
+        anchor: 'anchor',
+        entries: 'entries',
+        appendOnly: 'append-only',
+        learnMore: 'Learn more at tape.system',
+      },
     },
     testimonials: {
       eyebrow: 'Community',
       heading: 'What people are saying.',
+      playLabel: 'Play testimonials',
+      pauseLabel: 'Pause testimonials',
     },
   },
   'zh-cn': {
@@ -146,6 +194,7 @@ const landingPageData: Record<LandingLocale, LandingPageData> = {
       primaryHref: '/zh-cn/docs/getting-started/',
       primaryLabel: '开始使用',
       contributorsLabel: '由全球开发者共同打造',
+      contributorsViewAllLabel: '在 GitHub 查看所有贡献者',
     },
     features: {
       eyebrow: '特性',
@@ -208,13 +257,31 @@ const landingPageData: Record<LandingLocale, LandingPageData> = {
         '上下文不积累在 session 状态中，而是从追加式 tape——不可变事实的序列——中重建：Entry 记录发生了什么、Anchor 标记阶段边界并携带结构化状态。',
         '通过修正追加新事实来取代旧事实——从不覆盖。视图从 anchor 往后组装，而非整体继承。每次决策都可审计、可重放、可 fork。',
       ],
+      labels: {
+        caption: '展示事件、锚点与修正的 Tape 条目示例',
+        live: '实时',
+        time: '时间',
+        kind: '类型',
+        operation: '操作',
+        key: '键',
+        payload: '载荷',
+        awaitingEntry: '等待下一条记录…',
+        viewAssembled: '视图已组装',
+        facts: '条事实',
+        anchor: '个锚点',
+        entries: '条记录',
+        appendOnly: '仅追加',
+        learnMore: '前往 tape.system 了解更多',
+      },
     },
     testimonials: {
       eyebrow: '社区',
       heading: '好东西，值得赞。',
+      playLabel: '继续评价滚动',
+      pauseLabel: '暂停评价滚动',
     },
   },
-};
+} satisfies Record<LandingLocale, LandingPageData>;
 
 export function getLandingPageData(locale: LandingLocale): LandingPageData {
   return landingPageData[locale];

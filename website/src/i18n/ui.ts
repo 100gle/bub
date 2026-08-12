@@ -35,6 +35,13 @@ export const ui = {
     'nav.github': 'GitHub',
     'nav.menu': 'Menu',
     'nav.close': 'Close',
+    'nav.primary': 'Primary navigation',
+    'nav.mobile': 'Mobile navigation',
+
+    // Accessibility and controls
+    'a11y.skip': 'Skip to main content',
+    'a11y.backToTop': 'Back to top',
+    'theme.toggle': 'Toggle color theme',
 
     // 404
     '404.title': 'Page not found.',
@@ -46,12 +53,11 @@ export const ui = {
     'posts.title': 'Posts',
     'posts.description': 'Thoughts on agent design, collaboration, and building Bub.',
     'posts.back': 'Back to Posts',
+    'posts.subscribe': 'Subscribe via RSS',
 
     // Language switcher label (shown as the "other" language)
     'lang.switch': '中文',
 
-    // Tape model section
-    'tapeModel.learnMore': 'Learn more at tape.system',
   },
 
   'zh-cn': {
@@ -66,6 +72,13 @@ export const ui = {
     'nav.github': 'GitHub',
     'nav.menu': '菜单',
     'nav.close': '关闭',
+    'nav.primary': '主导航',
+    'nav.mobile': '移动端导航',
+
+    // 无障碍与控件
+    'a11y.skip': '跳到主要内容',
+    'a11y.backToTop': '返回顶部',
+    'theme.toggle': '切换颜色主题',
 
     // 404
     '404.title': '页面不存在。',
@@ -77,12 +90,11 @@ export const ui = {
     'posts.title': '文章',
     'posts.description': '关于 agent 设计、协作与构建 Bub 的思考。',
     'posts.back': '返回文章列表',
+    'posts.subscribe': '通过 RSS 订阅',
 
     // Language switcher label
     'lang.switch': 'English',
 
-    // Tape model section
-    'tapeModel.learnMore': '前往 tape.system 了解更多',
   },
 } as const;
 

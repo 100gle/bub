@@ -1,4 +1,5 @@
-import { defineCollection, z } from 'astro:content';
+import { defineCollection } from 'astro:content';
+import { z } from 'astro/zod';
 import { docsLoader, i18nLoader } from '@astrojs/starlight/loaders';
 import { docsSchema, i18nSchema } from '@astrojs/starlight/schema';
 import { file, glob } from 'astro/loaders';
@@ -9,8 +10,8 @@ const posts = defineCollection({
     title: z.string(),
     description: z.string(),
     date: z.coerce.date(),
-    locale: z.string(),
-    tags: z.array(z.string()).optional(),
+    locale: z.enum(['en', 'zh-cn']),
+    tags: z.array(z.string()).default([]),
   }),
 });
 
@@ -19,10 +20,10 @@ const userwall = defineCollection({
   schema: z.object({
     name: z.string(),
     handle: z.string(),
-    platform: z.string().optional(),
+    platform: z.enum(['x', 'github']).optional(),
     github: z.string().optional(),
     text: z.string(),
-    ref: z.string().url().optional(),
+    ref: z.url().optional(),
   }),
 });
 

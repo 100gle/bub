@@ -9,13 +9,16 @@ import {
 import PostCard from '@/components/ui/PostCard.astro';
 import PostListLayout from '@/layouts/PostListLayout.astro';
 import type { Locale } from '@/i18n/ui';
-import { SITE_URL } from 'astro:env/client';
+
+interface Props {
+  locale: Locale;
+}
 
 export function getStaticPaths() {
   return getStaticLocalePaths();
 }
 
-const { locale } = Astro.props as { locale: Locale };
+const { locale }: Props = Astro.props;
 const t = useTranslations(locale);
 
 const allPosts = await getCollection('posts');
@@ -23,7 +26,8 @@ const posts = allPosts
   .filter((post) => post.data.locale === locale)
   .sort((a, b) => b.data.date.getTime() - a.data.date.getTime());
 
-const canonicalUrl = `${SITE_URL}${getPostsHref(locale)}`;
+if (!Astro.site) throw new Error('Astro site URL must be configured.');
+const canonicalUrl = new URL(getPostsHref(locale), Astro.site).href;
 ---
 
 <PostListLayout

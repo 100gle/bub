@@ -45,12 +45,12 @@ build-and-publish: build publish ## Build distributions, then publish them
 
 docs-test: ## Build the website/docs bundle
 	@echo "==> Building website/"
-	BUB_ASTRO_IMAGE_MODE=build pnpm --dir website build
+	pnpm --dir website build
 
 docs: ## Start the website/docs development server
 	@echo "==> Starting website dev server"
-	BUB_ASTRO_IMAGE_MODE=dev pnpm --dir website dev --host
+	pnpm --dir website dev --host
 
 docs-preview: ## Preview the production website/docs build
 	@echo "==> Starting website preview server"
-	BUB_ASTRO_IMAGE_MODE=build pnpm --dir website preview --ip 0.0.0.0
+	pnpm --dir website preview --ip 0.0.0.0

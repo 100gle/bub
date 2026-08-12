@@ -1,21 +1,28 @@
 ---
 /**
- * BaseLayout.astro — shared HTML shell for every page.
+ * BaseLayout.astro — shared HTML shell for custom pages.
  *
  * Provides: <!doctype>, <head> (meta, OG, favicon, inline theme init),
  * <body> with NavBar, <slot/> for main content, Footer, and
  * the scroll-reveal + back-to-top scripts.
  *
- * All other layouts (LandingLayout, PostLayout, PostListLayout)
- * and standalone pages (404) should compose on top of this.
+ * Landing pages and the standalone 404 compose on top of this. Docs and
+ * blog pages use Starlight's shell.
  */
 import '@/styles/site.css';
 import Footer from '@/components/Footer.astro';
 import NavBar from '@/components/NavBar.astro';
 import Icon from '@/components/ui/Icon.astro';
-import { getLangFromUrl, getHtmlLang, getNavProps, useTranslations } from '@/i18n/utils';
+import ScrollReveal from '@/components/ui/ScrollReveal.astro';
+import {
+  getHtmlLang,
+  getLangFromUrl,
+  getNavProps,
+  getOpenGraphLocale,
+  useTranslations,
+  type NavProps,
+} from '@/i18n/utils';
 import { getRepoStats } from '@/lib/github';
-import { SITE_URL } from 'astro:env/client';
 
 interface Props {
   /** Page <title>. Falls back to site.title from ui.ts. */
@@ -24,6 +31,8 @@ interface Props {
   description?: string;
   /** Canonical URL. If not set, omitted from head. */
   canonicalUrl?: string;
+  /** Localized equivalents of this page. */
+  alternateLinks?: Array<{ href: string; hreflang: string }>;
   /** OG type. Defaults to 'website'. */
   ogType?: string;
   /** OG image path (relative to site root, e.g. '/og/index.png'). */
@@ -35,14 +44,14 @@ interface Props {
   /** Whether to render the skip-to-content link. Default true. */
   skipLink?: boolean;
   /** Override nav props (rare — only if you need a custom nav). */
-  navOverrides?: Record<string, string>;
-  /** Extra head content via named slot. */
+  navOverrides?: Partial<NavProps>;
   /** robots meta. */
   robots?: string;
 }
 
 const locale = getLangFromUrl(Astro.url);
 const htmlLang = getHtmlLang(locale);
+const openGraphLocale = getOpenGraphLocale(locale);
 const t = useTranslations(locale);
 const navProps = { ...getNavProps(locale, Astro.url.pathname), ...(Astro.props.navOverrides ?? {}) };
 const footerCopyright = `© ${new Date().getUTCFullYear()} Bub Contributors`;
@@ -53,6 +62,7 @@ const {
   title = t('site.title'),
   description = t('site.description'),
   canonicalUrl,
+  alternateLinks = [],
   ogType = 'website',
   ogImage = '/og/index.png',
   bodyClass = 'min-h-screen antialiased font-sans',
@@ -61,7 +71,8 @@ const {
   robots,
 } = Astro.props;
 
-const ogImageUrl = new URL(ogImage, Astro.site ?? SITE_URL).href;
+if (!Astro.site) throw new Error('Astro site URL must be configured.');
+const ogImageUrl = new URL(ogImage, Astro.site).href;
 ---
 
 <!doctype html>
@@ -75,28 +86,30 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE_URL).href;
     <meta name="theme-color" content="#252525" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     {canonicalUrl && <link rel="canonical" href={canonicalUrl} />}
+    {alternateLinks.map(({ href, hreflang }) => <link rel="alternate" {href} {hreflang} />)}
     {robots && <meta name="robots" content={robots} />}
-    <meta property="og:locale" content={htmlLang} />
+    <meta property="og:locale" content={openGraphLocale} />
     <meta property="og:type" content={ogType} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     {canonicalUrl && <meta property="og:url" content={canonicalUrl} />}
     <meta property="og:site_name" content="Bub" />
     <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:alt" content={title} />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content={title} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={ogImageUrl} />
+    <meta name="twitter:image:alt" content={title} />
     <script is:inline>
       (() => {
         const stored = localStorage.getItem('starlight-theme');
-        const dark = stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches);
-        if (dark) {
-          document.documentElement.classList.add('dark');
-          document.documentElement.setAttribute('data-theme', 'dark');
-        }
+        const followsSystem = stored === null || stored === 'auto';
+        const dark = stored === 'dark' || (followsSystem && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
       })();
     </script>
     <slot name="head" />
@@ -107,7 +120,7 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE_URL).href;
         href="#main-content"
         class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-primary focus:text-primary-foreground focus:px-4 focus:py-2 focus:text-sm focus:font-semibold"
       >
-        Skip to main content
+        {t('a11y.skip')}
       </a>
     )}
 
@@ -115,13 +128,15 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE_URL).href;
 
     <slot />
 
-    <Footer copyright={footerCopyright} githubLabel={navProps.githubLabel} />
+    <Footer copyright={footerCopyright} githubLabel={navProps.githubLabel} homeHref={navProps.homeHref} />
+
+    <ScrollReveal />
 
     {backToTop && (
       <button
         id="back-to-top"
         class="fixed right-4 bottom-[max(5rem,env(safe-area-inset-bottom))] z-50 flex h-9 w-9 cursor-pointer items-center justify-center border border-border bg-background/95 text-foreground opacity-0 backdrop-blur-sm transition-all duration-300 hover:bg-secondary pointer-events-none sm:bottom-6 sm:right-6 sm:h-10 sm:w-10"
-        aria-label="Back to top"
+        aria-label={t('a11y.backToTop')}
         type="button"
       >
         <Icon name="chevronUp" size={16} aria-hidden="true" />
@@ -129,53 +144,10 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE_URL).href;
     )}
 
     <script>
-      import { inView, animate } from 'motion';
-
       type BaseLayoutWindow = Window & {
         __bubBaseLayoutPageLoadBound?: boolean;
         __bubBackToTopCleanup?: () => void;
-        __bubRevealCleanups?: Array<() => void>;
       };
-
-      function initScrollReveals() {
-        const baseLayoutWindow = window as BaseLayoutWindow;
-        baseLayoutWindow.__bubRevealCleanups?.forEach((cleanup) => cleanup());
-        baseLayoutWindow.__bubRevealCleanups = [];
-
-        const revealElements = Array.from(document.querySelectorAll<HTMLElement>('[data-reveal]'));
-        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-          revealElements.forEach((htmlEl) => {
-            htmlEl.style.opacity = '';
-            htmlEl.style.transform = '';
-          });
-          return;
-        }
-
-        revealElements.forEach((el) => {
-          const htmlEl = el as HTMLElement;
-          htmlEl.style.opacity = '0';
-          htmlEl.style.transform = 'translateY(24px)';
-
-          const stopInView = inView(htmlEl, () => {
-            const controls = animate(
-              htmlEl,
-              { opacity: [0, 1], transform: ['translateY(24px)', 'translateY(0)'] },
-              { duration: 0.6, easing: [0.25, 0.1, 0.25, 1] },
-            );
-            return () => {
-              controls.stop();
-              htmlEl.style.opacity = '0';
-              htmlEl.style.transform = 'translateY(24px)';
-            };
-          }, { margin: '0px 0px -10% 0px' });
-
-          baseLayoutWindow.__bubRevealCleanups?.push(() => {
-            stopInView();
-            htmlEl.style.opacity = '';
-            htmlEl.style.transform = '';
-          });
-        });
-      }
 
       function initBackToTop() {
         const baseLayoutWindow = window as BaseLayoutWindow;
@@ -191,7 +163,10 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE_URL).href;
           btn.style.pointerEvents = show ? 'auto' : 'none';
         };
 
-        const handleClick = () => window.scrollTo({ top: 0, behavior: 'smooth' });
+        const handleClick = () => {
+          const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+        };
 
         window.addEventListener('scroll', toggle, { passive: true });
         toggle();
@@ -204,7 +179,7 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE_URL).href;
       }
 
       function initBaseLayoutUi() {
-        requestAnimationFrame(() => { initScrollReveals(); initBackToTop(); });
+        requestAnimationFrame(initBackToTop);
       }
 
       const baseLayoutWindow = window as BaseLayoutWindow;

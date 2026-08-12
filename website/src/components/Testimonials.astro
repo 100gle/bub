@@ -1,20 +1,9 @@
 ---
 import TestimonialCard from '@/components/ui/TestimonialCard.astro';
 import SectionHeading from '@/components/ui/SectionHeading.astro';
+import type { TestimonialsData } from '@/data/landing-page';
 
-type TestimonialItem = {
-  name: string;
-  handle: string;
-  text: string;
-  avatar?: string;
-  platform?: string;
-};
-
-interface Props {
-  eyebrow?: string;
-  heading?: string;
-  testimonials?: TestimonialItem[];
-}
+interface Props extends TestimonialsData {}
 
 type ColumnConfig = {
   className: string;
@@ -22,7 +11,7 @@ type ColumnConfig = {
   offset: number;
 };
 
-const { eyebrow, heading, testimonials = [] }: Props = Astro.props;
+const { eyebrow, heading, playLabel, pauseLabel, testimonials = [] }: Props = Astro.props;
 
 const colorAccents = [
   'border-l-[var(--site-testimonial-1)]',
@@ -45,21 +34,43 @@ const columns = columnConfigs.map((config, columnIndex) => ({
 }));
 ---
 
-<section class="relative py-20 md:py-28" data-reveal aria-label="Testimonials">
+<section class="relative py-20 md:py-28" data-reveal aria-labelledby="testimonials-heading">
   <div class="relative mx-auto max-w-6xl px-5 md:px-8">
-    <SectionHeading eyebrow={eyebrow} heading={heading} align="center" />
+    <SectionHeading eyebrow={eyebrow} heading={heading} align="center" headingId="testimonials-heading" />
+
+    {testimonials.length > 0 && (
+      <div class="mb-3 flex justify-end" data-testimonials-controls>
+        <button
+          type="button"
+          class="border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          data-testimonials-toggle
+          data-play-label={playLabel}
+          data-pause-label={pauseLabel}
+        >
+          {pauseLabel}
+        </button>
+      </div>
+    )}
 
     <div class="testimonials-wrapper relative" data-testimonials>
       <div class="testimonials-columns testimonials-fade grid h-80 gap-3 overflow-hidden sm:h-[380px] sm:grid-cols-2 lg:h-[440px] lg:grid-cols-3">
         {columns.map((column) => (
           <div class:list={[column.className, column.directionClass]}>
             <div class="flex flex-col gap-3">
-              {[...column.items, ...column.items].map((testimonial, i) => (
+              {column.items.map((testimonial, i) => (
                 <TestimonialCard
                   testimonial={testimonial}
                   accentClass={colorAccents[(i + column.offset) % colorAccents.length]}
                 />
               ))}
+              <div class="contents" aria-hidden="true">
+                {column.items.map((testimonial, i) => (
+                  <TestimonialCard
+                    testimonial={testimonial}
+                    accentClass={colorAccents[(i + column.offset) % colorAccents.length]}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         ))}
@@ -129,22 +140,36 @@ const columns = columnConfigs.map((config, columnIndex) => ({
     testimonialsWindow.__bubTestimonialsCleanup?.();
     testimonialsWindow.__bubTestimonialsCleanup = undefined;
 
-    const wrapper = document.querySelector('[data-testimonials]') as HTMLElement | null;
+    const wrapper = document.querySelector<HTMLElement>('[data-testimonials]');
     if (!wrapper) return;
+    const root = wrapper;
+    const toggle = document.querySelector<HTMLButtonElement>('[data-testimonials-toggle]');
+    const controls = document.querySelector<HTMLElement>('[data-testimonials-controls]');
 
     let wrapperInView = false;
+    let userPaused = false;
     const reduceMotionMql = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     function setPlaying(playing: boolean) {
-      wrapper.toggleAttribute('data-testimonials-playing', playing);
+      root.toggleAttribute('data-testimonials-playing', playing);
+    }
+
+    function updateToggle() {
+      if (!toggle) return;
+      controls?.toggleAttribute('hidden', reduceMotionMql.matches);
+      toggle.textContent = userPaused
+        ? toggle.dataset.playLabel ?? ''
+        : toggle.dataset.pauseLabel ?? '';
     }
 
     function maybePlay() {
       setPlaying(
         wrapperInView &&
         document.visibilityState !== 'hidden' &&
-        !reduceMotionMql.matches,
+        !reduceMotionMql.matches &&
+        !userPaused,
       );
+      updateToggle();
     }
 
     const handleMotionPreferenceChange = () => {
@@ -155,10 +180,16 @@ const columns = columnConfigs.map((config, columnIndex) => ({
       maybePlay();
     };
 
+    const handleToggle = () => {
+      userPaused = !userPaused;
+      maybePlay();
+    };
+
     reduceMotionMql.addEventListener('change', handleMotionPreferenceChange);
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    toggle?.addEventListener('click', handleToggle);
 
-    const stopInView = inView(wrapper, () => {
+    const stopInView = inView(root, () => {
       wrapperInView = true;
       maybePlay();
       return () => {
@@ -171,6 +202,7 @@ const columns = columnConfigs.map((config, columnIndex) => ({
       stopInView();
       reduceMotionMql.removeEventListener('change', handleMotionPreferenceChange);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      toggle?.removeEventListener('click', handleToggle);
       wrapperInView = false;
       setPlaying(false);
     };

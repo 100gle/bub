@@ -1,13 +1,7 @@
 ---
+import Avatar from '@/components/ui/Avatar.astro';
 import Icon from '@/components/ui/Icon.astro';
-
-type TestimonialItem = {
-  name: string;
-  handle: string;
-  text: string;
-  avatar?: string;
-  platform?: string;
-};
+import type { TestimonialItem } from '@/data/landing-page';
 
 interface Props {
   testimonial: TestimonialItem;
@@ -21,20 +15,15 @@ const { testimonial, accentClass } = Astro.props;
   <p class="text-[0.84rem] leading-relaxed text-foreground/85">{testimonial.text}</p>
   <div class="mt-3 flex items-center gap-2.5">
     {testimonial.avatar ? (
-      <div class="avatar-wrapper flex h-7 w-7 shrink-0 items-center justify-center">
-        <img
-          src={testimonial.avatar}
-          alt={testimonial.name}
-          width="28"
-          height="28"
-          loading="lazy"
-          class="h-7 w-7 object-cover"
-          onerror="this.remove();this.parentElement.querySelector('.avatar-fallback').hidden=false"
-        />
-        <div class="avatar-fallback text-muted-foreground/60" hidden>
-          <Icon name="circleUserRound" size={22} aria-hidden="true" />
-        </div>
-      </div>
+      <Avatar
+        src={testimonial.avatar}
+        alt=""
+        size={28}
+        class="relative flex h-7 w-7 shrink-0 items-center justify-center"
+        fallbackClass="flex h-7 w-7 items-center justify-center text-muted-foreground/60"
+        imageClass="absolute h-7 w-7 object-cover"
+        fallbackIconSize={22}
+      />
     ) : (
       <div class="flex h-7 w-7 shrink-0 items-center justify-center text-muted-foreground/60">
         <Icon name="circleUserRound" size={22} aria-hidden="true" />
@@ -44,6 +33,6 @@ const { testimonial, accentClass } = Astro.props;
       <p class="truncate text-xs font-bold text-foreground">{testimonial.name}</p>
       <p class="truncate text-[0.65rem] text-muted-foreground">{testimonial.handle}</p>
     </div>
-    {testimonial.platform && <Icon name={testimonial.platform === 'x' ? 'x-twitter' : testimonial.platform} size={12} class="shrink-0 text-muted-foreground/50" aria-hidden="true" />}
+    {testimonial.platform && <Icon name={testimonial.platform === 'x' ? 'x-twitter' : 'github'} size={12} class="shrink-0 text-muted-foreground/50" aria-hidden="true" />}
   </div>
 </div>

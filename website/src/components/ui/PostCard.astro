@@ -32,7 +32,7 @@ const indexStr = index !== undefined ? String(index).padStart(2, '0') : undefine
         {indexStr}
       </span>
     )}
-    <span class="ml-auto translate-x-0 translate-y-0 text-muted-foreground opacity-0 transition-all duration-200 group-hover:translate-x-1 group-hover:-translate-y-1 group-hover:opacity-100">
+    <span class="ml-auto translate-x-0 translate-y-0 text-muted-foreground opacity-0 transition-[transform,opacity] duration-200 group-hover:translate-x-1 group-hover:-translate-y-1 group-hover:opacity-100">
       <Icon name="arrowUpRight" size={16} aria-hidden="true" />
     </span>
   </div>
@@ -67,5 +67,5 @@ const indexStr = index !== undefined ? String(index).padStart(2, '0') : undefine
   </div>
 
   <!-- bottom accent line -->
-  <span class="absolute bottom-0 left-0 h-px w-0 bg-foreground transition-all duration-300 group-hover:w-full" aria-hidden="true"></span>
+  <span class="absolute bottom-0 left-0 h-px w-0 bg-foreground transition-[width] duration-300 group-hover:w-full" aria-hidden="true"></span>
 </a>

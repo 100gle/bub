@@ -9,11 +9,11 @@
  *   https://starlight.astro.build/guides/css-and-tailwind/
  *
  * Key rules:
- *   1. Define cascade layer order FIRST so Starlight/EC styles always
+ *   1. Define cascade layer order FIRST so Starlight styles always
  *      beat the base reset but yield to theme/utilities.
  *   2. Import @astrojs/starlight-tailwind INSTEAD of bare `tailwindcss`.
  *      It configures the dark variant, provides a partial Preflight that
- *      doesn't conflict with Starlight/EC, and maps --color-accent-* /
+ *      doesn't conflict with Starlight, and maps --color-accent-* /
  *      --color-gray-* into --sl-color-* tokens automatically.
  *   3. Import only `tailwindcss/theme.css` and `tailwindcss/utilities.css`
  *      here. Full Tailwind Preflight must stay in a separate non-Starlight
@@ -32,7 +32,7 @@
  * Precedence (lowest → highest):
  *   base → starlight → theme → components → utilities → (unlayered)
  *
- * Starlight & expressive-code styles live in `starlight`, so they
+ * Starlight component styles live in `starlight`, so they
  * always override `base` resets. Unlayered CSS has the highest
  * precedence of all.
  */
@@ -312,9 +312,9 @@
 
 /* ═══ Base reset layer ═══
  *
- * Lives in `@layer base` — the LOWEST priority layer. Starlight and
- * expressive-code styles in the `starlight` layer (or unlayered)
- * will always override these declarations.
+ * Lives in `@layer base` — the LOWEST priority layer. Starlight styles
+ * in the `starlight` layer (or unlayered) always override these
+ * declarations.
  */
 @layer base {
     * {

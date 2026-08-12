@@ -6,7 +6,7 @@
  * directly (it supports WOFF but not WOFF2).  For Noto Sans SC (CJK),
  * only the unicode-range subsets actually needed by page text are loaded.
  */
-import satori from 'satori';
+import satori, { type Font } from 'satori';
 import sharp from 'sharp';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -19,15 +19,8 @@ export interface PageMeta {
   description: string;
 }
 
-interface FontEntry {
-  name: string;
-  data: ArrayBuffer;
-  weight: number;
-  style: 'normal';
-}
-
 export interface FontsResult {
-  entries: FontEntry[];
+  entries: Font[];
   /** CSS font-family value covering all loaded subsets. */
   fontFamily: string;
 }
@@ -88,7 +81,7 @@ function findNeededSubsets(text: string, unicodeJson: Record<string, string>): s
  */
 export function loadFonts(allText: string): FontsResult {
   const WEIGHTS = [400, 700] as const;
-  const fonts: FontEntry[] = [];
+  const fonts: Font[] = [];
   const families: string[] = ['Outfit'];
 
   // Outfit — latin + latin-ext subsets at each weight

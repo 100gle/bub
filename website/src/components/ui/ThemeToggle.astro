@@ -1,11 +1,14 @@
 ---
 import Icon from '@/components/ui/Icon.astro';
+import { getLangFromUrl, useTranslations } from '@/i18n/utils';
+
+const t = useTranslations(getLangFromUrl(Astro.url));
 ---
 
 <button
   class="theme-toggle inline-flex h-9 w-9 cursor-pointer items-center justify-center border border-border text-foreground transition-colors hover:bg-secondary"
   type="button"
-  aria-label="Toggle color theme"
+  aria-label={t('theme.toggle')}
   data-theme-toggle
 >
   <Icon name="moon" size={16} class="dark:hidden" aria-hidden="true" />
@@ -92,11 +95,11 @@ import Icon from '@/components/ui/Icon.astro';
           fill: 'forwards',
         },
       );
-    });
+    }).catch(() => undefined);
 
     transition.finished.finally(() => {
       document.documentElement.classList.remove('theme-transitioning');
-    });
+    }).catch(() => undefined);
   }
 
   const themeToggleWindow = window as ThemeToggleWindow;

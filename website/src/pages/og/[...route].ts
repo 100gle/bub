@@ -26,10 +26,10 @@ export const GET: APIRoute = async ({ params }) => {
   if (!page) return new Response('Not found', { status: 404 });
 
   const png = await generateOgImage(page, fonts);
-  return new Response(png, {
+  return new Response(new Uint8Array(png), {
     headers: {
       'Content-Type': 'image/png',
-      'Cache-Control': 'public, max-age=31536000, immutable',
+      'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
     },
   });
 };

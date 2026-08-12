@@ -8,15 +8,15 @@
   },
   "scripts": {
     "generate:github-snapshot": "node ./scripts/generate-github-snapshot.mjs",
-    "predev": "pnpm run generate:github-snapshot",
+    "predev": "node ./scripts/generate-github-snapshot.mjs",
     "dev": "astro dev",
-    "prebuild": "pnpm run generate:github-snapshot",
+    "prebuild": "node ./scripts/generate-github-snapshot.mjs",
     "build": "astro build",
+    "precheck": "node ./scripts/generate-github-snapshot.mjs",
     "check": "astro check",
     "preview": "wrangler dev"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "^14.2.1",
     "@astrojs/starlight": "^0.41.7",
     "@astrojs/starlight-tailwind": "^5.0.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",

@@ -1,0 +1,55 @@
+---
+import Icon from '@/components/ui/Icon.astro';
+
+interface Props {
+  src: string;
+  alt: string;
+  size: number;
+  class?: string;
+  fallbackClass?: string;
+  imageClass?: string;
+  fallbackIconSize?: number;
+}
+
+const {
+  src,
+  alt,
+  size,
+  class: className,
+  fallbackClass,
+  imageClass,
+  fallbackIconSize = Math.round(size * 0.65),
+}: Props = Astro.props;
+---
+
+<bub-avatar class={className}>
+  <span class={fallbackClass} aria-hidden="true">
+    <Icon name="circleUserRound" size={fallbackIconSize} />
+  </span>
+  <img
+    {src}
+    {alt}
+    width={size}
+    height={size}
+    loading="lazy"
+    class={imageClass}
+  />
+</bub-avatar>
+
+<script>
+  class BubAvatar extends HTMLElement {
+    connectedCallback() {
+      const image = this.querySelector('img');
+      if (!image || image.dataset.errorBound === 'true') return;
+
+      image.dataset.errorBound = 'true';
+      const removeBrokenImage = () => image.remove();
+      image.addEventListener('error', removeBrokenImage, { once: true });
+      if (image.complete && image.naturalWidth === 0) removeBrokenImage();
+    }
+  }
+
+  if (!customElements.get('bub-avatar')) {
+    customElements.define('bub-avatar', BubAvatar);
+  }
+</script>

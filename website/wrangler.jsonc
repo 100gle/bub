@@ -1,20 +1,13 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "bub",
-  "compatibility_date": "2026-04-22",
+  "compatibility_date": "2026-08-11",
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page"
+  },
   "observability": {
-    "enabled": false,
-    "head_sampling_rate": 1,
-    "logs": {
-      "enabled": true,
-      "head_sampling_rate": 1,
-      "persist": true,
-      "invocation_logs": true
-    },
-    "traces": {
-      "enabled": false,
-      "persist": true,
-      "head_sampling_rate": 1
-    }
+    "enabled": false
   }
 }

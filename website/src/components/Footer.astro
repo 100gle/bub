@@ -3,21 +3,19 @@ import Icon from '@/components/ui/Icon.astro';
 import SiteLogo from '@/components/ui/SiteLogo.astro';
 
 interface Props {
-  copyright?: string;
-  githubLabel?: string;
+  copyright: string;
+  githubLabel: string;
+  homeHref: string;
 }
 
-const {
-  githubLabel = 'GitHub',
-  copyright = `© ${new Date().getUTCFullYear()} Bub Contributors`,
-}: Props = Astro.props;
+const { githubLabel, copyright, homeHref }: Props = Astro.props;
 ---
 
-<footer class="py-8" role="contentinfo">
+<footer class="py-8">
   <div class="mx-auto max-w-6xl px-5 md:px-8">
     <div class="flex flex-col items-center gap-6 text-center md:flex-row md:justify-between md:gap-0 md:text-left">
-      <a class="flex items-center gap-2 no-underline" href="/">
-        <SiteLogo alt="Bub" width={24} height={24} class="h-6 w-6" />
+      <a class="flex items-center gap-2 no-underline" href={homeHref}>
+        <SiteLogo alt="" width={24} height={24} class="h-6 w-6" loading="lazy" />
         <span class="text-sm font-semibold text-foreground">Bub</span>
       </a>
 
