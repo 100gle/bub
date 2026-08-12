@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - uses: j178/prek-action@v1
 
@@ -27,7 +27,7 @@ jobs:
         shell: bash
     steps:
       - name: Check out
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up the environment
         uses: ./.github/actions/setup-python-env
@@ -46,21 +46,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+      - name: Set up Node and pnpm
+        uses: pnpm/setup@v2
         with:
           version: 11.21.0
-
-      - name: Set up Node
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: website/.node-version
-          cache: pnpm
+          runtime: node@24.19.0
+          package-json-file: website/package.json
+          cache: true
           cache-dependency-path: website/pnpm-lock.yaml
+          install: false
 
-      - name: Check if documentation can be built
+      - name: Install website dependencies
+        run: pnpm --dir website install --frozen-lockfile
+
+      - name: Validate dependency health
         run: |
-          pnpm --dir website install --frozen-lockfile
-          pnpm --dir website build
+          pnpm --dir website peers check
+          pnpm --dir website audit --audit-level=low
+
+      - name: Type-check the website
+        run: pnpm --dir website check
+
+      - name: Build the website
+        run: pnpm --dir website build
+
+      - name: Verify routes, search, feeds, and metadata
+        run: pnpm --dir website verify:build
+
+      - name: Validate the Cloudflare deployment
+        run: pnpm --dir website verify:deploy
+
+      - name: Smoke-test the Cloudflare preview
+        run: pnpm --dir website test:preview

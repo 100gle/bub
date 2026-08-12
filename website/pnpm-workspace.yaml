@@ -1,6 +1,6 @@
 allowBuilds:
   esbuild@0.28.1 || 0.28.2: true
-  workerd@1.20260804.1: true
+  workerd@1.20260811.1: true
 blockExoticSubdeps: true
 minimumReleaseAge: 60
 minimumReleaseAgeStrict: true

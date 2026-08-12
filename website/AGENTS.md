@@ -25,10 +25,10 @@ Site URL: `https://bub.build`
 | Styling       | **Tailwind CSS v4** via `@tailwindcss/vite` + `@astrojs/starlight-tailwind` |
 | Component lib | shadcn/ui conventions (base-vega style) |
 | Animations    | `motion` (formerly Framer Motion)      |
-| Code blocks   | `astro-expressive-code`                |
+| Code blocks   | Astro's Shiki renderer                  |
 | Fonts         | Outfit Variable (sans), JetBrains Mono Variable (mono) |
 | Icons         | **@lucide/astro** — see Icon section below |
-| Type checking | TypeScript strict mode                 |
+| Type checking | TypeScript strict mode + `astro check` |
 
 ---
 
@@ -39,19 +39,20 @@ Site URL: `https://bub.build`
 ```bash
 pnpm install          # install deps
 pnpm dev              # dev server
+pnpm check            # Astro + TypeScript diagnostics
 pnpm build            # production build
+pnpm verify:build     # validate routes, search, feeds, SEO, and OG assets
 pnpm preview          # preview production build
+pnpm verify:deploy    # dry-run the assets-only Cloudflare deployment
+pnpm test:preview     # smoke-test the Cloudflare runtime
 ```
 
 ## Image Handling
 
-- Prefer the standard `Image` component from `astro:assets` for local raster assets used by pages and shared UI.
-- Do not replace local logo or illustration components with raw `<img>` just to work around Cloudflare adapter behavior.
-- The repository intentionally splits image handling in `astro.config.mjs`:
-  - `BUB_ASTRO_IMAGE_MODE=dev`: Cloudflare image service, so `make docs` works under Node without `cloudflare:workers` import failures.
-  - `BUB_ASTRO_IMAGE_MODE=build`: compile-time optimization with passthrough runtime, so `make docs-test`, `make docs-preview`, and production serve stable built asset URLs.
-- `Makefile` is the source of truth for that mode selection. `process.argv` command detection only exists as a fallback for direct `pnpm dev` / `pnpm build` usage inside `website/`.
-- If you change adapter image settings, re-verify all three paths: `make docs`, `make docs-test`, and `make docs-preview`.
+- Prefer Astro's `Image` component from `astro:assets` for local raster assets used by pages and shared UI.
+- All routes are prerendered, so Astro optimizes local images at build time with Sharp.
+- Keep the final output static unless a feature genuinely requires request-time state. Adding an SSR route also requires an adapter, a Worker deployment review, and new runtime smoke tests.
+- Re-verify `make docs`, `make docs-test`, and `make docs-preview` after changing image or output settings.
 
 ---
 
@@ -67,7 +68,7 @@ website/
 ├── src/
 │   ├── content.config.ts      # Content collections: docs (Starlight), i18n (Starlight), posts (blog)
 │   ├── components/            # shared Astro components
-│   │   ├── ui/                # primitives (Icon, SectionHeading)
+│   │   ├── ui/                # primitives (Icon, PostCard, ThemeToggle, etc.)
 │   │   ├── NavBar.astro
 │   │   ├── Footer.astro
 │   │   ├── Hero.astro
@@ -75,9 +76,7 @@ website/
 │   │   ├── HookIntro.astro
 │   │   ├── TapeModel.astro
 │   │   ├── Testimonials.astro
-│   │   ├── Contributors.astro
-│   │   ├── PostCard.astro
-│   │   └── ThemeToggle.astro
+│   │   └── Contributors.astro
 │   ├── content/
 │   │   ├── docs/              # [Zone 1] Starlight content collection
 │   │   │   ├── docs/              # EN docs — maps to /docs/… routes
@@ -95,25 +94,25 @@ website/
 │   │   └── posts/             # [Zone 3] Blog posts
 │   │       ├── en/            # English posts
 │   │       └── zh-cn/         # Chinese posts
+│   ├── data/
+│   │   └── landing-page.ts    # Single source of truth for landing-page copy (both locales)
 │   ├── i18n/                  # [Zone 2] Custom page i18n module (NOT for Starlight docs)
 │   │   ├── ui.ts              # Flat-key UI strings: nav, footer, 404, posts, site meta
 │   │   ├── utils.ts           # getLangFromUrl, useTranslations, getNavProps, etc.
-│   │   └── landing-page.ts    # Single source of truth for all landing-page copy (both locales)
 │   ├── layouts/
 │   │   ├── BaseLayout.astro   # Shared HTML shell (head, nav, footer, scripts)
 │   │   ├── LandingLayout.astro
 │   │   ├── PostLayout.astro
 │   │   └── PostListLayout.astro
 │   ├── pages/
-│   │   ├── 404.astro              # 404 page (custom page, uses Zone 2 i18n)
-│   │   └── [...locale]/           # Dynamic locale routing — generates EN (root) + ZH-CN variants
+│   │   └── [...locale]/           # Static locale routing — prerenders EN (root) + ZH-CN variants
+│   │       ├── 404.astro          # Localized Cloudflare 404 sources
 │   │       ├── index.astro        # Landing page (both locales via getStaticPaths)
 │   │       └── posts/
 │   │           ├── index.astro    # Post list (both locales via getStaticPaths)
 │   │           └── [slug].astro   # Single post (both locales via getStaticPaths)
 │   └── styles/
 │       └── global.css         # Tailwind v4 + Starlight bridge + CSS custom properties
-└── DESIGN.md                  # Visual design guide
 ```
 
 ---
@@ -129,7 +128,7 @@ The site has **three distinct i18n zones**. Each zone has its own translation me
 | Zone | Pages | i18n mechanism | String source |
 |------|-------|---------------|---------------|
 | **1 — Starlight docs** | `/docs/…`, `/zh-cn/docs/…` (all under `src/content/docs/`) | Starlight built-in i18n | `src/content/i18n/{locale}.json` + sidebar `translations` in config |
-| **2 — Custom pages** | Landing (`/`, `/zh-cn/`), 404 | Project's own `src/i18n/` module | `src/i18n/ui.ts` + `src/i18n/landing-page.ts` |
+| **2 — Custom pages** | Landing (`/`, `/zh-cn/`), 404 | Project i18n + typed landing data | `src/i18n/ui.ts` + `src/data/landing-page.ts` |
 | **3 — Blog** | `/posts/…`, `/zh-cn/posts/…` | Content collection + project `src/i18n/` | Post markdown in `src/content/posts/{locale}/`, UI strings in `ui.ts` |
 
 ### Zone 1 — Starlight docs i18n
@@ -195,7 +194,7 @@ export function getStaticPaths() {
 // → generates /zh-cn/    (zh-cn)
 ```
 
-**Never duplicate a page file per locale** — use this pattern instead. The 404 page is the only exception (lives at `src/pages/404.astro` root because Astro requires it there).
+**Never duplicate a page file per locale** — use this pattern instead. The shared `[...locale]/404.astro` emits both 404 variants; the Chinese output is relocated to `dist/zh-cn/404.html` after the build so Cloudflare can serve the nearest localized 404.
 
 | File               | Purpose |
 |--------------------|---------|
@@ -215,8 +214,8 @@ Blog posts are a **content collection** (`src/content/posts/{locale}/`) rendered
 |-------|----------|
 | Put Starlight UI overrides in `src/content/i18n/` | Duplicate Starlight keys into `src/i18n/ui.ts` |
 | Put nav/footer/404/post-list strings in `src/i18n/ui.ts` | Put custom page strings in `src/content/i18n/` |
-| Put landing-page structured copy in `src/i18n/landing-page.ts` | Put landing text in `ui.ts` or Starlight i18n |
-| Use `[...locale]` rest-param pages for custom pages | Duplicate page files per locale (e.g., `zh-cn/posts/`) |
+| Put landing-page structured copy in `src/data/landing-page.ts` | Put landing text in `ui.ts` or Starlight i18n |
+| Use `[...locale]` rest-param pages for custom pages | Duplicate page files per locale |
 | Use `translations` on sidebar items in `astro.config.mjs` | Create separate sidebar translation files for 2 locales |
 | Use BCP-47 tags (`zh-CN`) in Starlight config/i18n files | Use URL slugs (`zh-cn`) in Starlight i18n JSON filenames |
 | Use URL slugs (`zh-cn`) in directory paths and page routes | Use BCP-47 tags in directory/route paths |
@@ -369,13 +368,12 @@ Starlight ships with a blue accent (hue 224/234) and blue-tinted grays. The main
 3. Starlight bridge:        @import '@astrojs/starlight-tailwind';
 4. Tailwind layers:         @import 'tailwindcss/theme.css' layer(theme);
                             @import 'tailwindcss/utilities.css' layer(utilities);
-5. Animation utilities:     @import "tw-animate-css";  (unlayered — @utility can't nest)
-6. @theme inline { … }     — fonts, Starlight color scales, site design tokens, radius
-7. :root { … }             — raw light tokens (unlayered)
-8. .dark, [data-theme="dark"] { … } — raw dark tokens (unlayered)
-9. :root { --sl-font/color overrides } — unlayered to beat bridge @layer utilities
-10. .dark, [data-theme="dark"] { --sl-color-* overrides }
-11. @layer base { … }       — Tailwind preflight + site base resets (lowest priority)
+5. @theme inline { … }     — fonts, Starlight color scales, site design tokens, radius
+6. :root { … }             — raw light tokens (unlayered)
+7. .dark, [data-theme="dark"] { … } — raw dark tokens (unlayered)
+8. :root { --sl-font/color overrides } — unlayered to beat bridge @layer utilities
+9. .dark, [data-theme="dark"] { --sl-color-* overrides }
+10. @layer base { … }       — site base resets (lowest priority)
 ```
 
 **Why this order matters:**
@@ -383,19 +381,17 @@ Starlight ships with a blue accent (hue 224/234) and blue-tinted grays. The main
 | Layer | Contains | Priority |
 |---|---|---|
 | `@layer base` | Site resets (`* { border-border }`, body bg/text, etc.) | Lowest |
-| `@layer starlight` | Starlight + expressive-code styles | Overrides `base` |
+| `@layer starlight` | Starlight component styles | Overrides `base` |
 | `@layer theme` | Tailwind theme variables | Overrides `starlight` |
 | `@layer utilities` | Tailwind utilities | Overrides `theme` |
 | Unlayered CSS | Raw tokens, `--sl-font-*` / `--sl-color-*` overrides, `@media` queries | Highest |
 
 **Key rules:**
 
-- **NEVER use `@import "tailwindcss"`** — it brings in the full Preflight reset that conflicts with Starlight and astro-expressive-code. Only import `tailwindcss/theme.css` and `tailwindcss/utilities.css` in their proper layers.
+- **NEVER use `@import "tailwindcss"`** — it brings in the full Preflight reset that conflicts with Starlight content styles. Only import `tailwindcss/theme.css` and `tailwindcss/utilities.css` in their proper layers.
 - **Define Starlight colors via `@theme` scales** — `--color-accent-50` through `--color-accent-950` and `--color-gray-50` through `--color-gray-950`. The bridge reads these and generates `--sl-color-*` in `@layer utilities`.
 - **Override `--sl-*` colors and fonts manually (unlayered)** — the bridge's auto-mapped values don't produce the right contrast for the monochrome theme. Unlayered `:root` / `.dark, [data-theme="dark"]` blocks with explicit `--sl-color-*` values win over the bridge's `@layer utilities` output.
-- **Import `tailwindcss/preflight.css` in `@layer base`** — restores box-sizing, link resets, and other base styles that the split Tailwind import omits. Because `base` is the lowest layer, EC and Starlight styles still override it.
-- **`tw-animate-css` must be imported unlayered** — it contains `@utility` directives that cannot be nested inside `@layer`.
-- **The `@layer base` `*` reset is safe** — because EC styles live in `@layer starlight.components` (higher priority), they always win.
+- **The `@layer base` `*` reset is safe** — Starlight styles live in a higher-priority layer and always win.
 
 **Starlight color scales (in `@theme`):**
 
@@ -414,11 +410,13 @@ Both scales use pure neutral oklch values (0 chroma) to match the site's monochr
 2. To change Starlight's accent color → update `--color-accent-*` values in `@theme inline`.
 3. To change fonts → update `--font-sans` / `--font-mono` in `@theme inline` AND `--sl-font` / `--sl-font-mono` in the unlayered `:root` block.
 4. To add site-specific overrides that should beat Starlight → put them **unlayered** (outside any `@layer`).
-5. To add base resets that Starlight/EC can override → put them in `@layer base`.
+5. To add base resets that Starlight can override → put them in `@layer base`.
 
-**Overriding expressive-code on custom pages (e.g., Hero):**
+**Styling Astro's `<Code />` component on custom pages (e.g., Hero):**
 
-When using `<Code />` from `astro-expressive-code` outside Starlight docs, override EC's CSS custom properties in the component's scoped `<style>` block:
+Import `<Code />` from `astro:components`. The Hero keeps an `expressive-code`
+wrapper class for its existing terminal styles; define those styles in the
+component's scoped `<style>` block:
 
 ```css
 .hero-terminal :global(.expressive-code) {
@@ -465,11 +463,14 @@ Landing and 404 pages go through `BaseLayout`; docs and Blog pages use Starlight
 
 ## Before Committing
 
-1. `pnpm build` — must pass with no errors.
-2. Check for hardcoded nav props — use `getNavProps()` from `i18n/utils.ts`.
-3. Check for duplicated HTML shell — compose on `BaseLayout`.
-4. Ensure all user-visible strings use the correct zone:
+1. `pnpm peers check && pnpm audit --audit-level=low` — must report no peer or security issues.
+2. `pnpm check` — must report zero errors, warnings, and hints.
+3. `pnpm build && pnpm verify:build` — must pass the generated-site invariants.
+4. `pnpm verify:deploy && pnpm test:preview` — must validate the locked Cloudflare runtime with no bindings.
+5. Check for hardcoded nav props — use `getNavProps()` from `i18n/utils.ts`.
+6. Check for duplicated HTML shell — use `BaseLayout` for landing/404 and `<StarlightPage>` for docs/Blog.
+7. Ensure all user-visible strings use the correct zone:
    - **Zone 1** (Starlight docs): UI overrides in `src/content/i18n/`, sidebar translations inline in config.
-   - **Zone 2** (Custom pages): Landing copy → `landing-page.ts`, shared UI strings → `ui.ts`.
+   - **Zone 2** (Custom pages): Landing copy → `src/data/landing-page.ts`, shared UI strings → `ui.ts`.
    - **Zone 3** (Blog): Post content in `src/content/posts/{locale}/`, UI strings in `ui.ts`.
    - Never duplicate text across zones.
