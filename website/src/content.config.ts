@@ -27,7 +27,15 @@ const userwall = defineCollection({
 });
 
 export const collections = {
-  docs: defineCollection({ loader: docsLoader(), schema: docsSchema() }),
+  docs: defineCollection({
+    loader: docsLoader(),
+    schema: docsSchema({
+      extend: ({ image }) =>
+        z.object({
+          cover: image().optional(),
+        }),
+    }),
+  }),
   i18n: defineCollection({ loader: i18nLoader(), schema: i18nSchema() }),
   posts,
   userwall,

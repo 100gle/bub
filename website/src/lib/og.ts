@@ -11,6 +11,7 @@ import sharp from 'sharp';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getCollection } from 'astro:content';
+import { normalizeOgRouteFromEntryId } from '@/lib/og-routes';
 
 /* ─── Types ─── */
 
@@ -31,6 +32,9 @@ export interface FontsResult {
   /** CSS font-family value covering all loaded subsets. */
   fontFamily: string;
 }
+
+const SITE_DESCRIPTION = 'A common shape for agents that live alongside people.';
+const ZH_CN_SITE_DESCRIPTION = '与 Human 同在的轻量级 Agent 运行时。';
 
 /* ─── Font loading (@fontsource packages) ─── */
 
@@ -129,7 +133,11 @@ export function loadFonts(allText: string): FontsResult {
 
 export async function collectPages(): Promise<Record<string, PageMeta>> {
   const posts = await getCollection('posts');
+  const docs = await getCollection('docs');
   const pages: Record<string, PageMeta> = {};
+
+  const defaultDescription = (route: string) =>
+    route.startsWith('zh-cn/') ? ZH_CN_SITE_DESCRIPTION : SITE_DESCRIPTION;
 
   for (const post of posts) {
     const route = `posts/${post.id.replace(/\.md$/, '')}`;
@@ -139,14 +147,22 @@ export async function collectPages(): Promise<Record<string, PageMeta>> {
     };
   }
 
+  for (const doc of docs) {
+    const route = normalizeOgRouteFromEntryId(doc.id);
+    pages[route] = {
+      title: doc.data.title,
+      description: doc.data.description ?? defaultDescription(route),
+    };
+  }
+
   pages['index'] = {
     title: 'Bub',
-    description: 'A common shape for agents that live alongside people.',
+    description: SITE_DESCRIPTION,
   };
 
   pages['zh-cn/index'] = {
     title: 'Bub',
-    description: '与 Human 同在的轻量级 Agent 运行时。',
+    description: ZH_CN_SITE_DESCRIPTION,
   };
 
   return pages;

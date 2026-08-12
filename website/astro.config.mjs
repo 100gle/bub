@@ -52,6 +52,7 @@ export default defineConfig({
     starlight({
       title: 'Bub',
       description: 'A common shape for agents that live alongside people.',
+      routeMiddleware: './src/routeData.ts',
       expressiveCode: false,
       logo: {
         light: './src/assets/bub-logo.png',
