@@ -20,8 +20,8 @@ Site URL: `https://bub.build`
 
 | Layer         | Tool                                   |
 |---------------|----------------------------------------|
-| Framework     | **Astro 6** (static output)            |
-| Docs          | **@astrojs/starlight** ≥ 0.38          |
+| Framework     | **Astro 7** (static output, Vite 8/Rolldown) |
+| Docs          | **@astrojs/starlight** ≥ 0.41          |
 | Styling       | **Tailwind CSS v4** via `@tailwindcss/vite` + `@astrojs/starlight-tailwind` |
 | Component lib | shadcn/ui conventions (base-vega style) |
 | Animations    | `motion` (formerly Framer Motion)      |
@@ -139,7 +139,7 @@ Follows the **exact pattern** from [`withastro/starlight/docs`](https://github.c
 **Locale configuration** — `astro.config.mjs`:
 - English is the **`root` locale** — content files live under `src/content/docs/docs/` (e.g., `docs/getting-started/run-bub-locally.mdx`).
 - Other locales get **subdirectories**: `src/content/docs/zh-cn/docs/getting-started/run-bub-locally.mdx`.
-- The inner `docs/` directory creates the `/docs/` URL prefix — Starlight 0.38 has no `routePrefix` option, so this nesting is the standard way to namespace docs routes.
+- The inner `docs/` directory creates the `/docs/` URL prefix, keeping documentation routes namespaced without changing content IDs.
 - This keeps the URL scheme consistent: `/docs/…` for docs, `/posts/…` for blog.
 
 ```js
@@ -165,9 +165,11 @@ locales: {
 sidebar: [{
   label: 'Getting Started',
   translations: { 'zh-CN': '快速开始' },
-  autogenerate: { directory: 'docs/getting-started' },
+  items: [{ autogenerate: { directory: 'docs/getting-started' } }],
 }]
 ```
+
+Astro 7 uses the Sätteri Markdown processor by default. Keep `astro-mermaid` at 2.1 or newer and register it before Starlight so Mermaid code blocks are transformed by the active processor.
 
 **Content schema** — `src/content.config.ts`:
 - Uses `docsLoader()` + `docsSchema()` from `@astrojs/starlight/loaders` and `@astrojs/starlight/schema`.
