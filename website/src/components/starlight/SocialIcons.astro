@@ -1,0 +1,73 @@
+---
+import Icon from '@/components/ui/Icon.astro';
+import { getLangFromUrl, getNavProps } from '@/i18n/utils';
+import { getRepoStats, REPO_SLUG, REPO_URL } from '@/lib/github';
+
+const nav = getNavProps(getLangFromUrl(Astro.url), Astro.url.pathname);
+const { starsFormatted: stars } = getRepoStats();
+const normalizePath = (path: string) => path.replace(/\/+$/, '') || '/';
+const links = [
+  {
+    href: nav.docsHref,
+    label: nav.docsLabel,
+    activePrefix: normalizePath(nav.docsHref).replace(/\/getting-started$/, ''),
+  },
+  { href: nav.blogHref, label: nav.blogLabel, activePrefix: normalizePath(nav.blogHref) },
+  { href: 'https://hub.bub.build', label: nav.hubLabel, activePrefix: undefined },
+];
+const currentPath = normalizePath(Astro.url.pathname);
+const isActive = (prefix: string | undefined) =>
+  prefix !== undefined && (currentPath === prefix || currentPath.startsWith(`${prefix}/`));
+---
+
+<nav aria-label={nav.primaryLabel}>
+  {links.map(({ href, label, activePrefix }) => (
+    <a {href} aria-current={isActive(activePrefix) ? 'true' : undefined}>{label}</a>
+  ))}
+</nav>
+<a
+  href={REPO_URL}
+  target="_blank"
+  rel="noreferrer"
+  class="github-link"
+  aria-label={`${nav.githubLabel}: ${REPO_SLUG}`}
+>
+  <Icon name="github" size={15} aria-hidden="true" />
+  <span>{REPO_SLUG}</span>
+  {stars && <span class="stars">{stars}</span>}
+</a>
+
+<style>
+  @layer starlight.core {
+    nav {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: var(--sl-text-sm);
+    }
+
+    a {
+      color: var(--sl-color-gray-2);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .github-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      font-size: var(--sl-text-sm);
+    }
+
+    .stars {
+      border-inline-start: 1px solid var(--sl-color-gray-5);
+      padding-inline-start: 0.375rem;
+      color: var(--sl-color-gray-3);
+      font-size: var(--sl-text-xs);
+    }
+
+    a:hover {
+      color: var(--sl-color-white);
+    }
+  }
+</style>

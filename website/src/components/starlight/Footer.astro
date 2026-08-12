@@ -1,0 +1,11 @@
+---
+import DefaultFooter from '@astrojs/starlight/components/Footer.astro';
+import config from 'virtual:starlight/user-config';
+
+const { editUrl, lastUpdated, pagination } = Astro.locals.starlightRoute;
+const hasStarlightFooter = Boolean(
+  editUrl || lastUpdated || pagination.prev || pagination.next || config.credits,
+);
+---
+
+{hasStarlightFooter && <DefaultFooter />}

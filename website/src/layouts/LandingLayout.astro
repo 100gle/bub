@@ -6,7 +6,13 @@ import TapeModel from '@/components/TapeModel.astro';
 import Testimonials from '@/components/Testimonials.astro';
 import BaseLayout from '@/layouts/BaseLayout.astro';
 import type { LandingPageData } from '@/data/landing-page';
-import { getHtmlLang, getLocales, getLocalizedPath } from '@/i18n/utils';
+import {
+  getHtmlLang,
+  getLocales,
+  getLocalizedPath,
+  getPostsRssHref,
+  useTranslations,
+} from '@/i18n/utils';
 import type { Locale } from '@/i18n/ui';
 import { getRepoStats } from '@/lib/github';
 
@@ -32,7 +38,9 @@ const {
 const { contributors } = getRepoStats();
 if (!Astro.site) throw new Error('Astro site URL must be configured.');
 const site = Astro.site;
+const t = useTranslations(locale);
 const canonicalUrl = new URL(getLocalizedPath('/', locale), site).href;
+const rssUrl = new URL(getPostsRssHref(locale), site).href;
 const alternateLinks = getLocales().map((alternateLocale) => ({
   hreflang: getHtmlLang(alternateLocale),
   href: new URL(getLocalizedPath('/', alternateLocale), site).href,
@@ -48,6 +56,13 @@ alternateLinks.push({ hreflang: 'x-default', href: new URL('/', site).href });
   alternateLinks={alternateLinks}
   bodyClass="ambient-page min-h-screen antialiased font-sans"
 >
+  <link
+    slot="head"
+    rel="alternate"
+    type="application/rss+xml"
+    title={`Bub — ${t('posts.title')}`}
+    href={rssUrl}
+  />
   <main id="main-content" class="relative isolate">
     <div class="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
       <svg class="grain-texture absolute inset-0 h-full w-full" xmlns="http://www.w3.org/2000/svg">

@@ -10,7 +10,7 @@ This is the **Bub marketing & docs site** — a static Astro site combining:
 
 - **Landing pages** (home, 404) with custom components — i18n via `src/i18n/`.
 - **Starlight docs** (`/docs/getting-started/…`, `/zh-cn/docs/getting-started/…`) auto-generated from `src/content/docs/` — i18n via Starlight built-in.
-- **Blog** (`/posts/…`, `/zh-cn/posts/…`) powered by Astro content collections — i18n via `src/i18n/`.
+- **Blog** (`/posts/…`, `/zh-cn/posts/…`) powered by Astro content collections and rendered with Starlight pages — i18n via `src/i18n/`.
 
 Site URL: `https://bub.build`
 
@@ -207,7 +207,7 @@ export function getStaticPaths() {
 
 ### Zone 3 — Blog i18n
 
-Blog posts are a **content collection** (`src/content/posts/{locale}/`). The collection schema includes a `locale` field to identify the language. Blog UI strings (page titles, back-links, etc.) live in `src/i18n/ui.ts` (Zone 2), not in Starlight's i18n.
+Blog posts are a **content collection** (`src/content/posts/{locale}/`) rendered by `<StarlightPage>`. The collection schema includes a `locale` field to identify the language. Blog UI strings (page titles, back-links, etc.) live in `src/i18n/ui.ts` (Zone 2), not in Starlight's i18n. Keep this collection separate from `docs`; `markdown.processedDirs` gives it Starlight's Markdown pipeline without changing its schema or URLs.
 
 ### Boundary rules
 
@@ -439,14 +439,16 @@ Radius tokens follow a scale: `--radius-sm` through `--radius-4xl`, all computed
 ## Layout Hierarchy
 
 ```
-BaseLayout.astro          ← HTML shell, <head>, NavBar, Footer, scroll-reveal, back-to-top
+BaseLayout.astro          ← Custom-page HTML shell, NavBar, Footer, scroll-reveal, back-to-top
 ├── LandingLayout.astro   ← Hero + section components
-├── PostLayout.astro      ← Single blog post with article styles
-├── PostListLayout.astro  ← Blog listing page
 └── (404.astro uses BaseLayout directly)
+
+StarlightPage.astro       ← Docs and Blog HTML shell, search, theme, i18n, canonical/hreflang
+├── PostLayout.astro      ← Single blog post with date/tags and dynamic OG metadata
+└── PostListLayout.astro  ← Blog listing page
 ```
 
-**All pages go through BaseLayout.** Never duplicate `<!doctype>`, `<head>`, `NavBar`, `Footer`, or scroll-reveal scripts.
+Landing and 404 pages go through `BaseLayout`; docs and Blog pages use Starlight's shell. Never duplicate `<!doctype>` or `<head>`.
 
 ---
 

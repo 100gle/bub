@@ -1,0 +1,25 @@
+---
+import DefaultPageFrame from '@astrojs/starlight/components/PageFrame.astro';
+import SiteFooter from '@/components/Footer.astro';
+import { getLangFromUrl, getNavProps } from '@/i18n/utils';
+
+const nav = getNavProps(getLangFromUrl(Astro.url), Astro.url.pathname);
+const copyright = `© ${new Date().getUTCFullYear()} Bub Contributors`;
+---
+
+<DefaultPageFrame>
+  <slot name="header" slot="header" />
+  <slot name="sidebar" slot="sidebar" />
+  <slot />
+</DefaultPageFrame>
+<div class="starlight-site-footer" data-pagefind-ignore>
+  <SiteFooter githubLabel={nav.githubLabel} homeHref={nav.homeHref} {copyright} />
+</div>
+
+<style>
+  @layer starlight.components {
+    .starlight-site-footer {
+      border-top: 1px solid var(--sl-color-gray-5);
+    }
+  }
+</style>

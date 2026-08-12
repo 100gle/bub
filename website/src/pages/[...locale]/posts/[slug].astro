@@ -1,25 +1,40 @@
 ---
 import { getCollection, render } from 'astro:content';
-import { getLocales, getLocaleRouteParam, getPostSlug } from '@/i18n/utils';
+import {
+  getLocales,
+  getLocaleRouteParam,
+  getPostHref,
+  getPostSlug,
+  useTranslations,
+} from '@/i18n/utils';
 import PostLayout from '@/layouts/PostLayout.astro';
-import type { Locale } from '@/i18n/ui';
 
 export async function getStaticPaths() {
   const allPosts = await getCollection('posts');
   return getLocales().flatMap((locale) => {
     const localePosts = allPosts.filter((post) => post.data.locale === locale);
-    return localePosts.map((post) => ({
+    const orderedPosts = localePosts.sort((a, b) => a.data.date.getTime() - b.data.date.getTime());
+    const sidebar = [{
+      label: useTranslations(locale)('posts.title'),
+      items: orderedPosts.map((entry) => ({
+        label: entry.data.title,
+        // Starlight injects the active locale into manual sidebar links.
+        link: getPostHref('en', getPostSlug(entry.id, locale)),
+      })),
+    }];
+
+    return orderedPosts.map((post) => ({
       params: {
-        locale: getLocaleRouteParam(locale as Locale),
-        slug: getPostSlug(post.id, locale as Locale),
+        locale: getLocaleRouteParam(locale),
+        slug: getPostSlug(post.id, locale),
       },
-      props: { post },
+      props: { post, sidebar },
     }));
   });
 }
 
-const { post } = Astro.props;
-const { Content } = await render(post);
+const { post, sidebar } = Astro.props;
+const { Content, headings } = await render(post);
 ---
 
 <PostLayout
@@ -27,8 +42,10 @@ const { Content } = await render(post);
   description={post.data.description}
   date={post.data.date}
   locale={post.data.locale}
-  tags={post.data.tags ?? []}
-  postId={post.id.replace(/\.md$/, '')}
+  tags={post.data.tags}
+  sourceId={post.id}
+  headings={headings}
+  {sidebar}
 >
   <Content />
 </PostLayout>

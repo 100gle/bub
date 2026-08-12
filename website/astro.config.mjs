@@ -38,6 +38,10 @@ export default defineConfig({
       // dev, leaving the docs route unstyled even though
       // `astro build` + preview both work.)
       customCss: [fileURLToPath(new URL('./src/styles/global.css', import.meta.url))],
+      favicon: '/favicon.ico',
+      markdown: {
+        processedDirs: ['./src/content/posts/'],
+      },
       disable404Route: true,
       locales: {
         root: {
@@ -50,6 +54,12 @@ export default defineConfig({
         },
       },
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/bubbuild/bub' }],
+      components: {
+        Footer: './src/components/starlight/Footer.astro',
+        Header: './src/components/starlight/Header.astro',
+        PageFrame: './src/components/starlight/PageFrame.astro',
+        SocialIcons: './src/components/starlight/SocialIcons.astro',
+      },
       sidebar: [
         {
           label: 'Getting Started',

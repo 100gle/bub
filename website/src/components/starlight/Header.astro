@@ -1,0 +1,232 @@
+---
+import DefaultHeader from '@astrojs/starlight/components/Header.astro';
+import LanguageSelect from '@astrojs/starlight/components/LanguageSelect.astro';
+import ThemeSelect from '@astrojs/starlight/components/ThemeSelect.astro';
+import SocialIcons from '@/components/starlight/SocialIcons.astro';
+import Icon from '@/components/ui/Icon.astro';
+import { getLangFromUrl, getNavProps } from '@/i18n/utils';
+
+const { hasSidebar } = Astro.locals.starlightRoute;
+const nav = getNavProps(getLangFromUrl(Astro.url), Astro.url.pathname);
+const menuId = 'starlight__standalone-mobile-menu';
+---
+
+<DefaultHeader />
+{
+  !hasSidebar && (
+    <starlight-standalone-menu class="print:hidden">
+      <button
+        aria-expanded="false"
+        aria-label={nav.menuLabel}
+        aria-controls={menuId}
+        data-open-label={nav.menuLabel}
+        data-close-label={nav.closeLabel}
+        class="sl-flex md:sl-hidden"
+      >
+        <Icon name="menu" class="open-menu" aria-hidden="true" />
+        <Icon name="x" class="close-menu" aria-hidden="true" />
+      </button>
+      <div id={menuId} class="menu-pane">
+        <div class="menu-content">
+          <div class="mobile-links">
+            <SocialIcons />
+          </div>
+          <div class="mobile-preferences sl-flex">
+            <ThemeSelect />
+            <LanguageSelect />
+          </div>
+        </div>
+      </div>
+    </starlight-standalone-menu>
+  )
+}
+
+<script>
+  class StarlightStandaloneMenu extends HTMLElement {
+    private button = this.querySelector('button')!;
+    private menu = this.querySelector<HTMLElement>('.menu-pane')!;
+    private mediaQuery = matchMedia('(min-width: 50em)');
+    private handleButtonClick = () => this.toggleExpanded();
+    private handleKeyUp = (event: KeyboardEvent) => this.closeOnEscape(event);
+    private handleMediaChange = () => this.setExpanded(false);
+    private handleNavigation = (event: Event) => {
+      if ((event.target as Element).closest('a')) this.setExpanded(false);
+    };
+    private handlePageSwap = () => this.setExpanded(false);
+
+    connectedCallback() {
+      this.button.addEventListener('click', this.handleButtonClick);
+      this.addEventListener('keyup', this.handleKeyUp);
+      this.menu.addEventListener('click', this.handleNavigation);
+      this.mediaQuery.addEventListener('change', this.handleMediaChange);
+      document.addEventListener('astro:before-swap', this.handlePageSwap);
+      this.setExpanded(false);
+    }
+
+    disconnectedCallback() {
+      this.setExpanded(false);
+      this.button.removeEventListener('click', this.handleButtonClick);
+      this.removeEventListener('keyup', this.handleKeyUp);
+      this.menu.removeEventListener('click', this.handleNavigation);
+      this.mediaQuery.removeEventListener('change', this.handleMediaChange);
+      document.removeEventListener('astro:before-swap', this.handlePageSwap);
+    }
+
+    private setExpanded(expanded: boolean) {
+      this.setAttribute('aria-expanded', String(expanded));
+      this.button.setAttribute('aria-expanded', String(expanded));
+      this.button.setAttribute(
+        'aria-label',
+        expanded ? this.button.dataset.closeLabel! : this.button.dataset.openLabel!,
+      );
+      document.body.toggleAttribute('data-mobile-menu-expanded', expanded);
+      document
+        .querySelectorAll<HTMLElement>(
+          '.main-frame, .sl-skip-link, header.header > .header, .starlight-site-footer',
+        )
+        .forEach((element) => element.toggleAttribute('inert', expanded));
+
+      if (expanded) {
+        requestAnimationFrame(() => {
+          this.menu
+            .querySelector<HTMLElement>('a, button, select, [tabindex]:not([tabindex="-1"])')
+            ?.focus();
+        });
+      }
+    }
+
+    private toggleExpanded() {
+      this.setExpanded(this.getAttribute('aria-expanded') !== 'true');
+    }
+
+    private closeOnEscape(event: KeyboardEvent) {
+      if (event.code !== 'Escape') return;
+      this.setExpanded(false);
+      this.button.focus();
+    }
+  }
+
+  if (!customElements.get('starlight-standalone-menu')) {
+    customElements.define('starlight-standalone-menu', StarlightStandaloneMenu);
+  }
+</script>
+
+<style>
+  @layer starlight.core {
+    button {
+      position: fixed;
+      top: calc((var(--sl-nav-height) - var(--sl-menu-button-size)) / 2);
+      inset-inline-end: var(--sl-nav-pad-x);
+      z-index: var(--sl-z-index-navbar);
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      border-radius: 50%;
+      width: var(--sl-menu-button-size);
+      height: var(--sl-menu-button-size);
+      padding: 0.5rem;
+      background-color: var(--sl-color-white);
+      color: var(--sl-color-black);
+      box-shadow: var(--sl-shadow-md);
+      cursor: pointer;
+    }
+
+    [aria-expanded='true'] button {
+      background-color: var(--sl-color-gray-2);
+      box-shadow: none;
+    }
+
+    [aria-expanded='true'] button .open-menu,
+    :not([aria-expanded='true']) button .close-menu {
+      display: none;
+    }
+
+    .menu-pane {
+      visibility: hidden;
+      position: fixed;
+      z-index: var(--sl-z-index-menu);
+      inset-block: var(--sl-nav-height) 0;
+      inset-inline: 0;
+      background-color: var(--sl-color-black);
+      overflow-y: auto;
+      scrollbar-gutter: stable;
+    }
+
+    [aria-expanded='true'] .menu-pane {
+      visibility: visible;
+    }
+
+    .menu-content {
+      display: flex;
+      min-height: 100%;
+      flex-direction: column;
+      gap: 1.5rem;
+      padding: 1rem var(--sl-sidebar-pad-x);
+    }
+
+    .mobile-links {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+    }
+
+    .mobile-links :global(nav) {
+      display: grid;
+      flex: 1;
+      gap: 0;
+    }
+
+    .mobile-links :global(nav a) {
+      border-bottom: 1px solid var(--sl-color-gray-6);
+      padding: 0.875rem 0.25rem;
+      color: var(--sl-color-white);
+    }
+
+    .mobile-preferences {
+      justify-content: space-between;
+      flex-wrap: wrap;
+      border-top: 1px solid var(--sl-color-gray-6);
+      gap: 1rem;
+      padding-block: 1rem;
+    }
+
+    :global(:root[data-theme='light']) button {
+      background-color: var(--sl-color-black);
+      color: var(--sl-color-white);
+    }
+
+    :global(:root[data-theme='light']) [aria-expanded='true'] button {
+      background-color: var(--sl-color-gray-5);
+    }
+
+    @media (min-width: 50rem) {
+      starlight-standalone-menu {
+        display: none;
+      }
+    }
+  }
+</style>
+
+<style is:global>
+  @layer starlight.core {
+    :root:not([data-has-sidebar]) header.header {
+      padding-inline-end: calc(
+        var(--sl-nav-gap) + var(--sl-nav-pad-x) + var(--sl-menu-button-size)
+      );
+    }
+
+    [data-mobile-menu-expanded] {
+      overflow: hidden;
+    }
+
+    @media (min-width: 50rem) {
+      :root:not([data-has-sidebar]) header.header {
+        padding-inline-end: var(--sl-nav-pad-x);
+      }
+
+      [data-mobile-menu-expanded] {
+        overflow: auto;
+      }
+    }
+  }
+</style>

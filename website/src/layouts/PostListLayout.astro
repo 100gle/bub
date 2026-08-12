@@ -1,23 +1,64 @@
 ---
-import BaseLayout from '@/layouts/BaseLayout.astro';
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import ScrollReveal from '@/components/ui/ScrollReveal.astro';
+import {
+  getAlternateLocale,
+  getOpenGraphLocale,
+  getPostsRssHref,
+  useTranslations,
+} from '@/i18n/utils';
+import type { Locale } from '@/i18n/ui';
 
 interface Props {
   title: string;
   description: string;
-  canonicalUrl: string;
+  locale: Locale;
 }
 
-const { title, description, canonicalUrl } = Astro.props;
+const { title, description, locale }: Props = Astro.props;
+const t = useTranslations(locale);
+const socialTitle = `${title} | Bub`;
+const ogImage = locale === 'en' ? '/og/index.png' : `/og/${locale}/index.png`;
+const ogImageUrl = new URL(ogImage, Astro.site).href;
+const rssUrl = new URL(getPostsRssHref(locale), Astro.site).href;
+const openGraphLocale = getOpenGraphLocale(locale);
+const alternateOpenGraphLocale = getOpenGraphLocale(getAlternateLocale(locale));
 ---
 
-<BaseLayout
-  title={title}
-  description={description}
-  canonicalUrl={canonicalUrl}
-  bodyClass="flex min-h-screen flex-col antialiased font-sans"
-  backToTop={false}
+<StarlightPage
+  frontmatter={{
+    title,
+    description,
+    template: 'splash',
+    pagefind: false,
+    head: [
+      { tag: 'meta', attrs: { property: 'og:type', content: 'website' } },
+      { tag: 'meta', attrs: { property: 'og:locale', content: openGraphLocale } },
+      { tag: 'meta', attrs: { property: 'og:locale:alternate', content: alternateOpenGraphLocale } },
+      { tag: 'meta', attrs: { property: 'og:title', content: socialTitle } },
+      { tag: 'meta', attrs: { property: 'og:image', content: ogImageUrl } },
+      { tag: 'meta', attrs: { property: 'og:image:alt', content: title } },
+      { tag: 'meta', attrs: { property: 'og:image:width', content: '1200' } },
+      { tag: 'meta', attrs: { property: 'og:image:height', content: '630' } },
+      { tag: 'meta', attrs: { name: 'twitter:title', content: socialTitle } },
+      { tag: 'meta', attrs: { name: 'twitter:description', content: description } },
+      { tag: 'meta', attrs: { name: 'twitter:image', content: ogImageUrl } },
+      { tag: 'meta', attrs: { name: 'twitter:image:alt', content: title } },
+      {
+        tag: 'link',
+        attrs: {
+          rel: 'alternate',
+          type: 'application/rss+xml',
+          title: `Bub — ${t('posts.title')}`,
+          href: rssUrl,
+        },
+      },
+    ],
+  }}
+  hasSidebar={false}
 >
-  <main id="main-content" class="mx-auto w-full max-w-4xl flex-1 px-5 py-16 md:px-8 md:py-24">
+  <div class="not-content mx-auto w-full max-w-4xl">
     <slot />
-  </main>
-</BaseLayout>
+  </div>
+  <ScrollReveal />
+</StarlightPage>
