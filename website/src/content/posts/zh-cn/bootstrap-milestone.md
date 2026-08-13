@@ -8,9 +8,9 @@ tags: [milestone, engineering]
 
 ## 起源：来自现代 Agent 的灵感
 
-Bub 是一个 CLI 优先的 AI agent，秉承"Bub it. Build it."的理念。该项目直接汲取了 [How to Build an Agent](https://ampcode.com/how-to-build-an-agent) 和 [Tiny Agents: Building LLM-Powered Agents from Scratch](https://huggingface.co/blog/tiny-agents) 的灵感。这两份资源提炼了工具使用、循环驱动、可组合、可扩展 agent 的精髓。
+Bub 是一个 CLI 优先的 AI agent，秉承“Bub it. Build it.”的理念。该项目直接汲取了 [How to Build an Agent](https://ampcode.com/how-to-build-an-agent) 和 [Tiny Agents: Building LLM-Powered Agents from Scratch](https://huggingface.co/blog/tiny-agents) 的灵感。这两份资源提炼了工具使用、循环驱动、可组合、可扩展 agent 的精髓。
 
-但 Bub 也是对自我改进、自托管 agent 新浪潮的回应：想想 Claude Code、SWE-agent，以及更广泛的"自举"运动。目标是：一个不仅能帮你构建，还能帮助构建（和修复）自身的 agent。
+但 Bub 也是对自我改进、自托管 agent 新浪潮的回应：想想 Claude Code、SWE-agent，以及更广泛的“自举”运动。目标是：一个不仅能帮你构建，还能帮助构建（和修复）自身的 agent。
 
 ## 架构：ReAct 循环、工具与 CLI
 
@@ -46,7 +46,7 @@ class Agent:
 
 - 解析 LLM 输出中的工具调用（ReAct 模式：思考、行动、行动输入、观察）。
 - 执行工具（文件读写/编辑、shell 命令）并将结果反馈到对话中。
-- 迭代直到产生"最终答案"。
+- 迭代直到产生“最终答案”。
 
 ### 工具系统：可扩展且安全
 
@@ -103,7 +103,7 @@ Bub 还处于早期阶段。但架构已经就位，支持：
 - 自动化类型和 lint 修复
 - CLI 驱动的、用户友好的 agent 工作流
 
-从"修复一个 mypy 注解"到"完整的 agent 自我改进"的旅程还很漫长，但每一次自举都始于一个类型安全的步伐。
+从“修复一个 mypy 注解”到“完整的 agent 自我改进”的旅程还很漫长，但每一次自举都始于一个类型安全的步伐。
 
 ---
 

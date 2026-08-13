@@ -68,7 +68,7 @@ Telegram channel 使用 `telegram:<chat_id>` 作为 session id。即便同一用
 
 入站处理：
 
-- `/start` 由内部处理；机器人回复固定欢迎语（不在白名单的聊天则回复"不允许"提示）。
+- `/start` 由内部处理；机器人回复固定欢迎语（不在白名单的聊天则回复“不允许”提示）。
 - `/bub <text>` 会被规范化 —— 去掉 `/bub ` 前缀，剩余作为 prompt 内容。
 - 私聊中，所有非命令消息都会被采集。
 - 群聊中，每条非命令消息都会到达 Telegram channel。提到 `@<bot_username>`、包含关键字 `bub`、或回复机器人自己消息的内容会被标记为 active。其他群消息会被忽略，除非同一 session 在 `BUB_ACTIVE_TIME_WINDOW` 内已有活跃对话，此时它们会并入该批次。
