@@ -16,6 +16,7 @@ const image_service =
 export default defineConfig({
   // SSG by default; landing pages opt-in to SSR via `export const prerender = false`.
   compressHTML: true,
+  session: false,
   adapter: cloudflare({
     // Prefer an explicit mode from the calling command so local docs workflows
     // stay deterministic. Fall back to the Astro command name for direct
