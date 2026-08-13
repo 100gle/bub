@@ -19,7 +19,7 @@ Recommended settings:
 - Deploy command: `pnpm wrangler deploy`
 - Path: `website`
 - Environment variable: `SITE_URL=https://bub.build`
-- Environment variable: `NODE_VERSION=22.16.0`
+- Environment variable: `NODE_VERSION=24.19.0`
 - Build secret: `GITHUB_TOKEN=<GitHub PAT>` (optional, recommended for higher GitHub API limits)
 
 The repo keeps a minimal [wrangler.jsonc](./wrangler.jsonc) and relies on

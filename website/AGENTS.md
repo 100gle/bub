@@ -20,8 +20,8 @@ Site URL: `https://bub.build`
 
 | Layer         | Tool                                   |
 |---------------|----------------------------------------|
-| Framework     | **Astro 6** (static output)            |
-| Docs          | **@astrojs/starlight** ≥ 0.38          |
+| Framework     | **Astro 7** (static output, Vite 8/Rolldown) |
+| Docs          | **@astrojs/starlight** ≥ 0.41          |
 | Styling       | **Tailwind CSS v4** via `@tailwindcss/vite` + `@astrojs/starlight-tailwind` |
 | Component lib | shadcn/ui conventions (base-vega style) |
 | Animations    | `motion` (formerly Framer Motion)      |
@@ -35,6 +35,8 @@ Site URL: `https://bub.build`
 ## Package Manager
 
 **pnpm** — always use `pnpm` to install packages and run scripts.
+
+The repository pins pnpm in `package.json`. pnpm 11 build-script approvals and dependency overrides live in `pnpm-workspace.yaml`.
 
 ```bash
 pnpm install          # install deps
@@ -139,7 +141,7 @@ Follows the **exact pattern** from [`withastro/starlight/docs`](https://github.c
 **Locale configuration** — `astro.config.mjs`:
 - English is the **`root` locale** — content files live under `src/content/docs/docs/` (e.g., `docs/getting-started/run-bub-locally.mdx`).
 - Other locales get **subdirectories**: `src/content/docs/zh-cn/docs/getting-started/run-bub-locally.mdx`.
-- The inner `docs/` directory creates the `/docs/` URL prefix — Starlight 0.38 has no `routePrefix` option, so this nesting is the standard way to namespace docs routes.
+- The inner `docs/` directory creates the `/docs/` URL prefix, keeping documentation routes namespaced without changing content IDs.
 - This keeps the URL scheme consistent: `/docs/…` for docs, `/posts/…` for blog.
 
 ```js
@@ -165,9 +167,11 @@ locales: {
 sidebar: [{
   label: 'Getting Started',
   translations: { 'zh-CN': '快速开始' },
-  autogenerate: { directory: 'docs/getting-started' },
+  items: [{ autogenerate: { directory: 'docs/getting-started' } }],
 }]
 ```
+
+Astro 7 uses the Sätteri Markdown processor by default. Keep `astro-mermaid` at 2.1 or newer and register it before Starlight so Mermaid code blocks are transformed by the active processor.
 
 **Content schema** — `src/content.config.ts`:
 - Uses `docsLoader()` + `docsSchema()` from `@astrojs/starlight/loaders` and `@astrojs/starlight/schema`.
@@ -367,13 +371,12 @@ Starlight ships with a blue accent (hue 224/234) and blue-tinted grays. The main
 3. Starlight bridge:        @import '@astrojs/starlight-tailwind';
 4. Tailwind layers:         @import 'tailwindcss/theme.css' layer(theme);
                             @import 'tailwindcss/utilities.css' layer(utilities);
-5. Animation utilities:     @import "tw-animate-css";  (unlayered — @utility can't nest)
-6. @theme inline { … }     — fonts, Starlight color scales, site design tokens, radius
-7. :root { … }             — raw light tokens (unlayered)
-8. .dark, [data-theme="dark"] { … } — raw dark tokens (unlayered)
-9. :root { --sl-font/color overrides } — unlayered to beat bridge @layer utilities
-10. .dark, [data-theme="dark"] { --sl-color-* overrides }
-11. @layer base { … }       — Tailwind preflight + site base resets (lowest priority)
+5. @theme inline { … }     — fonts, Starlight color scales, site design tokens, radius
+6. :root { … }             — raw light tokens (unlayered)
+7. .dark, [data-theme="dark"] { … } — raw dark tokens (unlayered)
+8. :root { --sl-font/color overrides } — unlayered to beat bridge @layer utilities
+9. .dark, [data-theme="dark"] { --sl-color-* overrides }
+10. @layer base { … }       — Tailwind preflight + site base resets (lowest priority)
 ```
 
 **Why this order matters:**
@@ -392,7 +395,6 @@ Starlight ships with a blue accent (hue 224/234) and blue-tinted grays. The main
 - **Define Starlight colors via `@theme` scales** — `--color-accent-50` through `--color-accent-950` and `--color-gray-50` through `--color-gray-950`. The bridge reads these and generates `--sl-color-*` in `@layer utilities`.
 - **Override `--sl-*` colors and fonts manually (unlayered)** — the bridge's auto-mapped values don't produce the right contrast for the monochrome theme. Unlayered `:root` / `.dark, [data-theme="dark"]` blocks with explicit `--sl-color-*` values win over the bridge's `@layer utilities` output.
 - **Import `tailwindcss/preflight.css` in `@layer base`** — restores box-sizing, link resets, and other base styles that the split Tailwind import omits. Because `base` is the lowest layer, EC and Starlight styles still override it.
-- **`tw-animate-css` must be imported unlayered** — it contains `@utility` directives that cannot be nested inside `@layer`.
 - **The `@layer base` `*` reset is safe** — because EC styles live in `@layer starlight.components` (higher priority), they always win.
 
 **Starlight color scales (in `@theme`):**
