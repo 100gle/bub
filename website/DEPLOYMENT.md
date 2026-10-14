@@ -4,10 +4,6 @@
 
 The new `website/` directory is the docs and marketing site for Bub.
 
-Legacy MkDocs source files may still exist in the repository during the
-transition, but production deployment now targets the Astro site on
-Cloudflare Workers.
-
 ## Cloudflare Workers
 
 Connect the repository to a Cloudflare Worker using Git integration.
@@ -21,6 +17,8 @@ Recommended settings:
 - Environment variable: `SITE_URL=https://bub.build`
 - Node version: `24.21.0` (pinned in `website/.node-version`; remove any older
   `NODE_VERSION` override, or set it to `24.21.0`)
+- Package manager version: `12.11.2` (pinned as `packageManager` in
+  `website/package.json`, no other setting needed)
 - Build secret: `GITHUB_TOKEN=<GitHub PAT>` (optional, recommended for higher GitHub API limits)
 
 The repo keeps a minimal [wrangler.jsonc](./wrangler.jsonc) and relies on
@@ -50,9 +48,6 @@ SSR Worker build:
 - `_worker.js`
 - `_routes.json`
 
-Production deployment is handled by Cloudflare Workers Git integration instead of
-GitHub Actions.
-
 ## Current Repo State
 
 The local developer entrypoints now target the new site:
@@ -70,10 +65,3 @@ The deployment split is intentionally simple:
 - `main.yml` only verifies that the website builds
 - `on-release-main.yml` only handles package release tasks
 - Cloudflare Workers deploys the website from the connected repository
-
-Required Cloudflare Workers project configuration:
-
-- Git integration enabled for this repository
-- Build command set to `pnpm install --frozen-lockfile && pnpm build`
-- Deploy command set to `pnpm wrangler deploy`
-- Working directory set to `website`
