@@ -67,7 +67,11 @@ dev = [
     "ruff>=0.15.10",
     "prek>=0.3.8",
     "pytest-asyncio>=1.3.0",
+    "bub-desktop",
 ]
+
+[tool.uv.sources]
+bub-desktop = { path = "desktop/bridge", editable = true }
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
