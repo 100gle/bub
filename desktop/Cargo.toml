@@ -1,0 +1,26 @@
+[package]
+name = "bub-desktop"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+# Development aid, not part of the shipped app: paint one frame into an
+# offscreen texture and write it to a PNG, so the shell can be reviewed on a
+# machine that cannot screen-capture a window. GPUI gates `render_to_image`
+# behind its `test-support` feature, which is why this is a feature and not an
+# always-available flag.
+shot = ["gpui-kit/test-support", "dep:image"]
+
+[dependencies]
+# One dependency for GPUI + the styled component system (gpui-kit pins the
+# matching `gpui-pre` snapshot of zed's gpui, re-exported as `gpui_kit::gpui`).
+gpui-kit = "0.7"
+# Enable runtime shader compilation so a full build does not require the
+# separately-downloadable Xcode "Metal Toolchain" component.
+gpui-pre-platform = { version = "0.3.9", features = ["runtime_shaders"] }
+# Only for the `shot` feature, which encodes the captured frame.
+image = { version = "0.25", optional = true }
+serde_json = "1"
+# Already in gpui's dependency graph; used for the bridge event channel.
+smol = "2"
