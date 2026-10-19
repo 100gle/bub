@@ -11,52 +11,91 @@ use serde_json::Value;
 
 use crate::theme;
 
-/// One block in the transcript.
+/// One step inside an assistant turn.
+///
+/// A turn is a list of these because that is what the model actually produces:
+/// a thought, a tool call, its result, more prose. They are steps of one answer
+/// rather than separate messages, which is why they live inside one block.
 #[derive(Clone)]
-pub(crate) enum Item {
-    User(String),
-    Assistant(String),
+pub(crate) enum Step {
     Reasoning(String),
-    ToolCall {
+    Text(String),
+    Tool {
         name: String,
         detail: String,
         state: Status,
         approval_id: Option<String>,
         result: Option<String>,
     },
-    ToolResult {
-        detail: String,
-    },
+    /// A tool result that arrived with no card waiting for it.
+    Result(String),
     Usage(String),
     Error(String),
 }
 
-impl Item {
-    /// The text slot a streamed delta can be appended to, if this block has one.
+impl Step {
+    /// The text slot a streamed delta can be appended to, if this step has one.
     pub(crate) fn text_mut(&mut self) -> Option<&mut String> {
         match self {
-            Item::Assistant(text) | Item::Reasoning(text) => Some(text),
+            Step::Reasoning(text) | Step::Text(text) => Some(text),
             _ => None,
         }
     }
+
+    /// Whether this step is a tool call still waiting on something.
+    pub(crate) fn is_open_tool(&self) -> bool {
+        matches!(
+            self,
+            Step::Tool {
+                state,
+                result: None,
+                ..
+            } if matches!(
+                state,
+                Status::Running | Status::Awaiting | Status::Allowed | Status::Denied
+            )
+        )
+    }
 }
 
-/// A transcript row plus a stable id, so its block can be collapsed.
+/// One block in the transcript.
+#[derive(Clone)]
+pub(crate) enum Turn {
+    User {
+        text: String,
+        attachments: Vec<String>,
+    },
+    /// Everything the model produced in one turn, in the order it produced it.
+    ///
+    /// It is one block — and it is created the moment the message is sent, while
+    /// it is still empty — because it is one message. The reader asked a
+    /// question; this is the answer, however many steps it took to write, and
+    /// the wait belongs to it rather than floating somewhere else on screen.
+    Assistant(Vec<Step>),
+}
+
+/// A transcript row plus a stable id, so its blocks can be collapsed.
 #[derive(Clone)]
 pub(crate) struct Entry {
     pub(crate) id: u64,
-    pub(crate) item: Item,
+    pub(crate) turn: Turn,
 }
+
+/// Identifies a collapsible block: the turn, and which step inside it.
+///
+/// Steps are only ever appended, so this key is stable for the life of a turn —
+/// which is what lets a disclosure stay open while the answer grows under it.
+pub(crate) type BlockKey = (u64, usize);
 
 /// Which streamed block is currently open for delta appends.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Open {
     None,
-    Assistant,
+    Text,
     Reasoning,
 }
 
-/// Lifecycle of one agent action, shared by tool cards and the activity trace.
+/// Lifecycle of one agent action.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Status {
     Running,
@@ -94,17 +133,7 @@ impl Status {
     }
 }
 
-/// One row in the activity trace.
-#[derive(Clone)]
-pub(crate) struct ActivityEntry {
-    pub(crate) icon: IconName,
-    pub(crate) label: String,
-    pub(crate) detail: String,
-    pub(crate) status: Status,
-    pub(crate) tool: Option<String>,
-}
-
-/// One entry in the capability panel.
+/// One entry in the capability list.
 #[derive(Clone)]
 pub(crate) struct ToolInfo {
     pub(crate) name: String,
@@ -118,6 +147,134 @@ pub(crate) struct SkillInfo {
     pub(crate) name: String,
     pub(crate) description: String,
     pub(crate) source: String,
+}
+
+/// One selectable model, as the runtime reports it.
+#[derive(Clone)]
+pub(crate) struct ModelChoice {
+    pub(crate) id: String,
+    pub(crate) name: String,
+}
+
+/// What a queued attachment is, so it can be labelled and sent with the right
+/// media type. Kept coarse: the runtime only distinguishes four kinds.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum AttachmentKind {
+    Image,
+    Audio,
+    Video,
+    Document,
+}
+
+impl AttachmentKind {
+    /// Infer the kind from a file name, the way the bridge infers its media
+    /// type. Unknown extensions are documents.
+    pub(crate) fn of(path: &str) -> Self {
+        let ext = std::path::Path::new(path)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        match ext.as_str() {
+            "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "tiff" | "heic" | "svg" => {
+                AttachmentKind::Image
+            }
+            "mp3" | "wav" | "m4a" | "ogg" | "flac" | "aiff" | "webm" => AttachmentKind::Audio,
+            "mp4" | "mov" | "mkv" | "avi" => AttachmentKind::Video,
+            _ => AttachmentKind::Document,
+        }
+    }
+
+    pub(crate) fn icon(self) -> IconName {
+        match self {
+            AttachmentKind::Image => IconName::Image,
+            AttachmentKind::Audio => IconName::Music,
+            AttachmentKind::Video => IconName::FilePlay,
+            AttachmentKind::Document => IconName::FileText,
+        }
+    }
+
+    /// The media type the runtime expects.
+    pub(crate) fn media_type(self) -> &'static str {
+        match self {
+            AttachmentKind::Image => "image",
+            AttachmentKind::Audio => "audio",
+            AttachmentKind::Video => "video",
+            AttachmentKind::Document => "document",
+        }
+    }
+}
+
+/// A file queued in the composer, awaiting the next message.
+#[derive(Clone)]
+pub(crate) struct Attachment {
+    pub(crate) path: String,
+    pub(crate) name: String,
+    pub(crate) kind: AttachmentKind,
+    pub(crate) size: u64,
+}
+
+impl Attachment {
+    pub(crate) fn from_path(path: &std::path::Path) -> Self {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("file")
+            .to_string();
+        let path_str = path.to_string_lossy().to_string();
+        let size = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
+        Attachment {
+            kind: AttachmentKind::of(&path_str),
+            path: path_str,
+            name,
+            size,
+        }
+    }
+}
+
+/// Collapse a byte count into the shortest honest form.
+pub(crate) fn format_size(bytes: u64) -> String {
+    const KB: f64 = 1024.;
+    const MB: f64 = KB * 1024.;
+    const GB: f64 = MB * 1024.;
+    let bytes = bytes as f64;
+    if bytes >= GB {
+        format!("{:.1} GB", bytes / GB)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes / MB)
+    } else if bytes >= KB {
+        format!("{:.0} KB", bytes / KB)
+    } else {
+        format!("{} B", bytes as u64)
+    }
+}
+
+/// A command the runtime advertises, split from its prefix.
+#[derive(Clone)]
+pub(crate) struct Command {
+    /// The bare name, e.g. `model`.
+    pub(crate) name: String,
+    /// The full trigger, e.g. `,model`.
+    pub(crate) trigger: String,
+}
+
+/// Split the runtime's command list (`[",help", ",model"]`) into a prefix and
+/// bare names. Tolerates entries that do not carry the declared prefix.
+pub(crate) fn parse_commands(commands: &[String], prefix: &str) -> Vec<Command> {
+    commands
+        .iter()
+        .map(|command| {
+            let name = command
+                .strip_prefix(prefix)
+                .unwrap_or(command)
+                .trim()
+                .to_string();
+            Command {
+                trigger: command.clone(),
+                name,
+            }
+        })
+        .collect()
 }
 
 /// Whether model tool calls run straight away or wait for a verdict.
@@ -144,20 +301,73 @@ impl ApprovalMode {
     }
 }
 
-/// Which half of the agent panel is showing.
-#[derive(Clone, Copy, PartialEq)]
-pub(crate) enum InspectorTab {
-    Activity,
-    Tools,
+/// Which page of the settings view is showing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum SettingsSection {
+    General,
+    Model,
+    Capabilities,
+    Channels,
+    About,
+}
+
+impl SettingsSection {
+    /// Every page, in navigation order.
+    pub(crate) const ALL: [SettingsSection; 5] = [
+        SettingsSection::General,
+        SettingsSection::Model,
+        SettingsSection::Capabilities,
+        SettingsSection::Channels,
+        SettingsSection::About,
+    ];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            SettingsSection::General => "General",
+            SettingsSection::Model => "Model",
+            SettingsSection::Capabilities => "Capabilities",
+            SettingsSection::Channels => "Channels",
+            SettingsSection::About => "About",
+        }
+    }
+
+    pub(crate) fn icon(self) -> IconName {
+        match self {
+            SettingsSection::General => IconName::SlidersHorizontal,
+            SettingsSection::Model => IconName::Cpu,
+            SettingsSection::Capabilities => IconName::Blocks,
+            SettingsSection::Channels => IconName::Globe,
+            SettingsSection::About => IconName::Info,
+        }
+    }
+}
+
+/// Which surface the window is showing.
+///
+/// The conversation and the settings pages are peers, not a page and a modal
+/// over it: moving between them is navigation in one direction or the other,
+/// which is why there is nothing to close. Which settings page is a separate
+/// fact — [`SettingsSection`] — so leaving settings and coming back returns to
+/// where you were rather than to the first page.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum View {
+    Conversation,
+    Settings,
+}
+
+impl View {
+    pub(crate) fn is_conversation(self) -> bool {
+        matches!(self, View::Conversation)
+    }
 }
 
 /// Whether a block is expanded, given its default and the user's overrides.
 pub(crate) fn disclosure(
-    toggled: &std::collections::HashSet<u64>,
-    id: u64,
+    toggled: &std::collections::HashSet<BlockKey>,
+    key: BlockKey,
     default_open: bool,
 ) -> bool {
-    if toggled.contains(&id) {
+    if toggled.contains(&key) {
         !default_open
     } else {
         default_open

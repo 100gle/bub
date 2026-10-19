@@ -25,8 +25,6 @@ pub(crate) enum Plate {
     Accent,
     /// A quiet fill: secondary actions and icon controls.
     Quiet,
-    /// A label chip, which is read rather than pressed.
-    Tag,
     /// No plate at all until the pointer arrives.
     Bare,
 }
@@ -48,22 +46,16 @@ impl Skin {
     fn of(cx: &App, which: Plate, enabled: bool) -> Self {
         match (which, enabled) {
             (Plate::Accent, true) => Self {
-                plate: theme::accent(),
-                hover: theme::accent_hover(),
-                press: theme::accent_active(),
-                ink: theme::on_accent(),
+                plate: theme::primary(),
+                hover: theme::primary_hover(),
+                press: theme::primary_active(),
+                ink: theme::on_primary(),
             },
             (Plate::Quiet, true) => Self {
                 plate: theme::fill(),
                 hover: theme::fill_strong(),
                 press: theme::fill_strong(),
                 ink: theme::ink(),
-            },
-            (Plate::Tag, true) => Self {
-                plate: theme::tag(),
-                hover: theme::fill_strong(),
-                press: theme::fill_strong(),
-                ink: theme::ink_secondary(),
             },
             (Plate::Bare, true) => Self {
                 plate: cx.theme().transparent,
@@ -73,7 +65,7 @@ impl Skin {
             },
             // A disabled control keeps its shape and gives up its colour, so an
             // accent plate turns grey rather than washing out to pale blue.
-            (Plate::Accent | Plate::Quiet | Plate::Tag, false) => Self {
+            (Plate::Accent | Plate::Quiet, false) => Self {
                 plate: theme::fill(),
                 hover: theme::fill(),
                 press: theme::fill(),
@@ -110,24 +102,6 @@ fn plated(button: Button, cx: &App, which: Plate, enabled: bool) -> Button {
         )
         .bg(skin.plate)
         .text_color(skin.ink)
-}
-
-/// A square icon control. Sized so the icon lands at 14px inside 28px.
-pub(crate) fn icon_button(
-    cx: &App,
-    id: impl Into<ElementId>,
-    icon: IconName,
-    tooltip: &'static str,
-    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-) -> Button {
-    plated(Button::new(id), cx, Plate::Bare, true)
-        .small()
-        .w(theme::CONTROL)
-        .h(theme::CONTROL)
-        .rounded(ButtonRounded::Size(theme::RADIUS_CONTROL))
-        .icon(icon)
-        .tooltip(tooltip)
-        .on_click(on_click)
 }
 
 /// A circular icon control, the shape of the composer's one action.
@@ -176,6 +150,27 @@ pub(crate) fn pill_button(
         .on_click(on_click)
 }
 
+/// A pill control inside the composer's toolbar: a quiet plate carrying a
+/// leading glyph, a label, and the caret that marks it as opening a menu.
+pub(crate) fn toolbar_pill(
+    cx: &App,
+    id: impl Into<ElementId>,
+    icon: IconName,
+    label: &str,
+    tooltip: &'static str,
+) -> Button {
+    plated(Button::new(id), cx, Plate::Bare, true)
+        .xsmall()
+        .h(theme::TOOLBAR_H)
+        .px(px(9.))
+        .rounded(ButtonRounded::Size(px(9999.)))
+        .icon(icon)
+        .label(label.to_string())
+        .text_size(theme::TEXT_UI)
+        .dropdown_caret(true)
+        .tooltip(tooltip)
+}
+
 /// A monospace payload, scrolled rather than clipped so nothing is lost.
 pub(crate) fn code_block(id: impl Into<ElementId>, cx: &App, text: &str) -> AnyElement {
     div()
@@ -195,38 +190,6 @@ pub(crate) fn code_block(id: impl Into<ElementId>, cx: &App, text: &str) -> AnyE
         .into_any_element()
 }
 
-/// A named capability plate.
-///
-/// Capabilities are read far more often than they are inspected, so the panel
-/// lists them as compact chips rather than as a paragraph each — and the
-/// paragraph, where the runtime supplies one, becomes the tooltip. A chip is a
-/// real button rather than a styled div so it keeps the library's hover,
-/// press, focus and tooltip behaviour for free.
-pub(crate) fn chip(
-    cx: &App,
-    id: impl Into<ElementId>,
-    label: &str,
-    icon: Option<IconName>,
-    detail: Option<String>,
-) -> Button {
-    let mut chip = plated(Button::new(id), cx, Plate::Tag, true)
-        .xsmall()
-        .h(px(22.))
-        .px(px(7.))
-        .rounded(ButtonRounded::Size(theme::RADIUS_CHIP))
-        .font_family(cx.theme().mono_font_family.clone())
-        .text_size(theme::TEXT_MICRO)
-        .label(label.to_string());
-
-    if let Some(icon) = icon {
-        chip = chip.icon(icon);
-    }
-    if let Some(detail) = detail.filter(|detail| !detail.is_empty()) {
-        chip = chip.tooltip(detail);
-    }
-    chip
-}
-
 /// A dim caption, for metadata that should be legible but never loud.
 pub(crate) fn caption(text: impl Into<String>) -> Div {
     div()
@@ -235,7 +198,7 @@ pub(crate) fn caption(text: impl Into<String>) -> Div {
         .child(text.into())
 }
 
-/// The small heading above a group of rows in the agent panel.
+/// The small heading above a group of rows.
 pub(crate) fn group_title(text: impl Into<String>) -> Div {
     div()
         .text_size(theme::TEXT_MICRO)
@@ -262,7 +225,7 @@ pub(crate) fn switch_track(checked: bool) -> Div {
         .p(px(2.))
         .rounded_full()
         .bg(if checked {
-            theme::accent()
+            theme::primary()
         } else {
             theme::fill_strong()
         })

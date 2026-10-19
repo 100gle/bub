@@ -17,8 +17,8 @@
 //!
 //! One window, one title bar: the window opens with its system title bar
 //! hidden (`appears_transparent`) so the traffic lights sit inside the app's
-//! own top row, and the shell draws only what a reader needs — a transcript, a
-//! composer, and an agent panel behind ⌘I.
+//! own top row, and the shell draws only what a reader needs — a transcript and
+//! a composer. Everything else is behind ⌘,.
 
 mod app;
 mod bridge;
@@ -33,7 +33,7 @@ use gpui_kit::{actions, px, size, AppContext as _, KeyBinding, WindowOptions};
 
 use app::DesktopApp;
 
-actions!(bub, [ToggleInspector]);
+actions!(bub, [OpenSettings, CloseSettings]);
 
 /// Key context for window-level commands that must work while typing.
 pub(crate) const BUB_CONTEXT: &str = "Bub";
@@ -48,12 +48,16 @@ fn main() {
         .with_assets(gpui_kit::assets::AllAssets)
         .run(|cx| {
             gpui_kit::init(cx);
-            cx.bind_keys([KeyBinding::new("cmd-i", ToggleInspector, None)]);
+            cx.bind_keys([
+                // ⌘, is the platform convention for Settings on macOS.
+                KeyBinding::new("cmd-,", OpenSettings, None),
+                KeyBinding::new("escape", CloseSettings, Some(BUB_CONTEXT)),
+            ]);
             let options = WindowOptions {
-                // Below this the transcript measure and the panel start fighting;
+                // Below this the rail and the reading measure start fighting;
                 // the window is barred from shrinking into a state with no good
                 // layout rather than left to reflow into a bad one.
-                window_min_size: Some(size(px(760.), px(520.))),
+                window_min_size: Some(size(px(900.), px(560.))),
                 ..TitleBar::window_options()
             };
             // The application owns the window and its view from here on; the

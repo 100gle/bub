@@ -62,7 +62,33 @@ SKILLS = [
     ("review-pr", "Review a pull request against the repo guidelines.", "project"),
 ]
 
-COMMANDS = ["/clear", "/compact", "/help", "/model", "/tools", "/plan"]
+COMMANDS = [",clear", ",compact", ",help", ",model", ",tools", ",plan"]
+
+MODELS = [
+    {"id": "openai:gpt-4o", "name": "GPT-4o"},
+    {"id": "anthropic:claude-3-7-sonnet", "name": "Claude 3.7 Sonnet"},
+    {"id": "openrouter:openrouter/free", "name": "OpenRouter Free"},
+]
+
+# The effective configuration the settings page edits. A couple of keys are
+# marked overridden so the warning row can be seen without a real environment.
+SETTINGS = {
+    "model": "openai:gpt-4o",
+    "command_prefix": ",",
+    "fallback_models": ["anthropic:claude-3-7-sonnet"],
+    "api_key": "",
+    "api_base": "",
+    "max_tokens": 16384,
+    "max_steps": "",
+    "model_timeout_seconds": None,
+    "enabled_channels": "all",
+    "stream_output": True,
+    "telegram.token": "",
+    "telegram.allow_users": "",
+    "telegram.allow_chats": "",
+    "telegram.proxy": "",
+}
+OVERRIDDEN = ["api_key"]
 
 
 def emit(payload):
@@ -76,12 +102,32 @@ def ready():
         "protocol": 2,
         "workspace": WORKSPACE,
         "model": "openai:gpt-4o",
-        "command_prefix": "/",
+        "command_prefix": ",",
         "session_id": "desktop:default",
         "approval_mode": "auto",
         "commands": COMMANDS,
         "tools": [{"name": n, "description": d, "exposure": e, "deferred": lazy} for n, d, e, lazy in TOOLS],
         "skills": [{"name": n, "description": d, "source": s} for n, d, s in SKILLS],
+    })
+
+
+def models(request_id=None):
+    emit({
+        "type": "models",
+        "id": request_id,
+        "current": SETTINGS["model"],
+        "models": MODELS,
+    })
+
+
+def settings(request_id=None):
+    emit({
+        "type": "settings",
+        "id": request_id,
+        "values": SETTINGS,
+        "overridden": OVERRIDDEN,
+        "config_file": os.path.expanduser("~/.bub/config.yml"),
+        "home": os.path.expanduser("~/.bub"),
     })
 
 
@@ -140,7 +186,20 @@ def walk():
     )
     stream("tool_result", {"tool_results": [{"ok": True}]})
 
-    stream("text", {"delta": "The flag is in place. Next I'd wire it to `--dry-run`.\n"})
+    stream(
+        "text",
+        {
+            "delta": "The flag is in place. Next I'd wire it to `--dry-run`:\n\n"
+            "```python\n"
+            "def deploy(root: Path, dry_run: bool = False) -> None:\n"
+            "    plan = resolve(root)\n"
+            "    if dry_run:\n"
+            "        print(plan)\n"
+            "        return\n"
+            "    plan.apply()\n"
+            "```\n"
+        },
+    )
 
     stream("usage", {"elapsed_seconds": 6.4, "usage": {"total_tokens": 4215}})
     stream("final", {})
@@ -184,6 +243,15 @@ def main():
         kind = message.get("type")
         if kind == "ping":
             emit({"type": "pong", "id": message.get("id")})
+        elif kind == "models":
+            models(message.get("id"))
+        elif kind == "settings":
+            settings(message.get("id"))
+        elif kind == "settings_update":
+            values = message.get("values") or {}
+            SETTINGS.update(values)
+            emit({"type": "result", "id": message.get("id"), "ok": True})
+            settings()
         elif kind == "send":
             turns += 1
             walk()

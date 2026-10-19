@@ -14,9 +14,11 @@
 //! | `BUB_SHOT` | output path. Without it this module does nothing at all. |
 //! | `BUB_SHOT_AFTER` | ms to wait before touching anything (default 900). |
 //! | `BUB_SHOT_PROMPT` | text to start a run with, to fill the transcript. |
-//! | `BUB_SHOT_SETTLE` | ms to wait after that run starts (default 1900). |
-//! | `BUB_SHOT_INSPECTOR` | capture with the agent panel open. |
-//! | `BUB_SHOT_TAB` | `tools` to capture the panel's other half. |
+//! | `BUB_SHOT_SETTLE` | ms to wait after that run starts (default 1900); lower it to catch a turn in flight. |
+//! | `BUB_SHOT_SETTINGS` | capture the settings page instead of the shell. |
+//! | `BUB_SHOT_SECTION` | `model`, `capabilities`, `channels`, or `about`. |
+//! | `BUB_SHOT_COMPOSE` | text to seed the composer with (e.g. `,` for the palette). |
+//! | `BUB_SHOT_BLOCKED` | send mid-run, to capture the "still working" nudge. |
 //!
 //! A typical review pass:
 //!
@@ -33,7 +35,7 @@ use std::time::Duration;
 use gpui_kit::{AnyWindowHandle, App, AppContext as _, Entity, Window};
 
 use crate::app::DesktopApp;
-use crate::model::InspectorTab;
+use crate::model::SettingsSection;
 
 /// Hands the app a one-shot capture task, or does nothing when `BUB_SHOT` is
 /// unset. Called once, with the window already open, from `main`.
@@ -44,6 +46,11 @@ pub(crate) fn arm(handle: AnyWindowHandle, app: &Entity<DesktopApp>, cx: &mut Ap
     let app = app.clone();
 
     cx.spawn(async move |cx| {
+        let compose = env::var("BUB_SHOT_COMPOSE")
+            .ok()
+            .filter(|text| !text.is_empty());
+        let blocked = env::var_os("BUB_SHOT_BLOCKED").is_some();
+
         // Let the bridge connect and the first frame settle: a capture taken
         // before `ready` arrives would show the offline state instead.
         wait(cx, millis("BUB_SHOT_AFTER", 900)).await;
@@ -52,28 +59,56 @@ pub(crate) fn arm(handle: AnyWindowHandle, app: &Entity<DesktopApp>, cx: &mut Ap
             cx.update(|cx| {
                 app.update(cx, |app, cx| app.prompt_directly(&prompt, cx));
             });
+            // Press Enter into the running turn — the one keystroke the bridge
+            // cannot take. Done before the settle, so `BUB_SHOT_SETTLE` decides
+            // both whether the run is still going and whether the nudge that
+            // answers the keystroke is still up.
+            if blocked {
+                let _ = cx.update_window(handle, |_, window: &mut Window, cx| {
+                    app.update(cx, |app, cx| {
+                        let input = app.input.clone();
+                        if compose.is_none() {
+                            input.update(cx, |state, cx| {
+                                state.set_value("and update the docs", window, cx);
+                            });
+                        }
+                        app.send(&input, window, cx);
+                    });
+                });
+            }
             wait(cx, millis("BUB_SHOT_SETTLE", 1900)).await;
         }
 
-        if env::var_os("BUB_SHOT_INSPECTOR").is_some() {
-            let tab = match env::var("BUB_SHOT_TAB").as_deref() {
-                Ok("tools") => InspectorTab::Tools,
-                _ => InspectorTab::Activity,
+        if env::var_os("BUB_SHOT_SETTINGS").is_some() {
+            let section = match env::var("BUB_SHOT_SECTION").as_deref() {
+                Ok("model") => SettingsSection::Model,
+                Ok("capabilities") => SettingsSection::Capabilities,
+                Ok("channels") => SettingsSection::Channels,
+                Ok("about") => SettingsSection::About,
+                _ => SettingsSection::General,
             };
             cx.update(|cx| {
                 app.update(cx, |app, cx| {
-                    app.toggle_inspector(cx);
-                    app.inspector_tab = tab;
-                    cx.notify();
+                    app.open_settings(cx);
+                    app.select_settings_section(section, cx);
                 });
             });
-            // The panel resizes into place; give it a beat so the captured
-            // frame has the final column widths rather than the opening ones.
-            wait(cx, Duration::from_millis(250)).await;
+            // The page asks the bridge for its snapshot on open; wait for it so
+            // the fields are seeded rather than empty.
+            wait(cx, Duration::from_millis(400)).await;
         }
 
         let shot = cx
             .update_window(handle, |_, window: &mut Window, cx| {
+                // Seed the composer so the command palette (text starting with
+                // the prefix) is on screen in the capture.
+                if let Some(text) = compose.clone() {
+                    app.update(cx, |app, cx| {
+                        app.input
+                            .update(cx, |state, cx| state.set_value(text.clone(), window, cx));
+                        cx.notify();
+                    });
+                }
                 // Paint explicitly rather than trusting the run loop: a window
                 // this machine never composites to a display gets no display
                 // link, so no frame is ever scheduled and `render_to_image`

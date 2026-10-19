@@ -10,9 +10,11 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import mimetypes
 import sys
 from collections.abc import AsyncIterable
-from typing import Any, TextIO
+from pathlib import Path
+from typing import Any, TextIO, cast
 
 from loguru import logger
 
@@ -20,9 +22,10 @@ from bub.builtin.commands import strip_command_prefix
 from bub.builtin.settings import load_settings
 from bub.channels.admission import AdmitDecision, TurnSnapshot
 from bub.channels.base import Interface
-from bub.channels.message import ChannelMessage
+from bub.channels.message import ChannelMessage, MediaItem, MediaType
 from bub.envelope import Envelope
 from bub.streaming import StreamEvent
+from bub_desktop import settings as bub_settings
 
 PROTOCOL_VERSION = 2
 DEFAULT_SESSION_ID = "desktop:default"
@@ -33,6 +36,44 @@ DEFAULT_CHAT_ID = "default"
 APPROVAL_MODES = ("auto", "ask")
 DEFAULT_APPROVAL_MODE = "auto"
 DEFAULT_APPROVAL_TIMEOUT = 600.0
+
+# The media kinds Bub's message model accepts.
+_MEDIA_TYPES = ("image", "audio", "video", "document")
+
+
+def _read_bytes(path: str) -> bytes:
+    return Path(path).read_bytes()
+
+
+def _media_from_attachments(raw: Any) -> list[MediaItem]:
+    """Turn the front-end's queued files into media the runtime can carry."""
+    if not isinstance(raw, list):
+        return []
+    items: list[MediaItem] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        path = str(entry.get("path", ""))
+        if not path:
+            continue
+        media_type = str(entry.get("media_type") or "document")
+        if media_type not in _MEDIA_TYPES:
+            media_type = "document"
+        filename = str(entry.get("name") or Path(path).name)
+        mime_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
+        async def fetch(source: str = path) -> bytes:
+            return await asyncio.to_thread(_read_bytes, source)
+
+        items.append(
+            MediaItem(
+                type=cast("MediaType", media_type),
+                mime_type=mime_type,
+                filename=filename,
+                data_fetcher=fetch,
+            )
+        )
+    return items
 
 
 class Emitter:
@@ -157,6 +198,9 @@ class DesktopChannel(Interface):
         self._input = input_stream if input_stream is not None else sys.stdin.buffer
         self._stop_event: asyncio.Event | None = None
         self._reader_task: asyncio.Task[None] | None = None
+        # The prefix the front-end's command test uses; kept in step with a
+        # settings edit so a new prefix works without a restart.
+        self._command_prefix = load_settings().command_prefix
 
     async def start(self, stop_event: asyncio.Event) -> None:
         self._stop_event = stop_event
@@ -207,6 +251,18 @@ class DesktopChannel(Interface):
             return None
         return AdmitDecision("steer", reason="desktop session is already generating")
 
+    async def _route(self, content: str) -> None:
+        """Hand a command or message to Bub exactly as an inbound message."""
+        message = ChannelMessage(
+            session_id=self._session_id,
+            channel=self.name,
+            chat_id=self._chat_id,
+            content=content,
+            kind="command" if strip_command_prefix(content, self._command_prefix) is not None else "normal",
+            output_channel=self.name,
+        )
+        await self._on_receive(message)
+
     async def _read_stdin(self) -> None:
         loop = asyncio.get_running_loop()
         while True:
@@ -245,6 +301,10 @@ class DesktopChannel(Interface):
                 await self._handle_stop(payload, request_id)
             case "models":
                 await self._handle_models(payload, request_id)
+            case "settings":
+                await self._handle_settings(payload, request_id)
+            case "settings_update":
+                await self._handle_settings_update(payload, request_id)
             case "approval_response":
                 await self._handle_approval_response(payload, request_id)
             case "approval_mode":
@@ -262,14 +322,14 @@ class DesktopChannel(Interface):
     async def _handle_send(self, payload: dict[str, Any], request_id: Any) -> None:
         text = str(payload.get("text", ""))
         session_id = str(payload.get("session_id") or self._session_id)
-        prefix = load_settings().command_prefix
-        is_command = strip_command_prefix(text, prefix) is not None
+        is_command = strip_command_prefix(text, self._command_prefix) is not None
         message = ChannelMessage(
             session_id=session_id,
             channel=self.name,
             chat_id=self._chat_id,
             content=text,
             kind="command" if is_command else "normal",
+            media=_media_from_attachments(payload.get("attachments")),
             output_channel=self.name,
         )
         await self._on_receive(message)
@@ -293,6 +353,38 @@ class DesktopChannel(Interface):
             "current": options.current_model,
             "models": [{"id": model.id, "name": model.name} for model in options.models],
         })
+
+    async def _handle_settings(self, payload: dict[str, Any], request_id: Any) -> None:
+        if self._framework is None:
+            await self._emitter.emit({"type": "result", "id": request_id, "ok": False, "error": "no framework"})
+            return
+        await self._emitter.emit({
+            "type": "settings",
+            "id": request_id,
+            "values": bub_settings.snapshot(self._framework),
+            "overridden": bub_settings.overridden(),
+            "config_file": bub_settings.config_file(self._framework),
+            "home": bub_settings.home(self._framework),
+        })
+
+    async def _handle_settings_update(self, payload: dict[str, Any], request_id: Any) -> None:
+        values = payload.get("values")
+        if not isinstance(values, dict) or not values:
+            await self._emitter.emit({"type": "result", "id": request_id, "ok": False, "error": "no values"})
+            return
+        if self._framework is None:
+            await self._emitter.emit({"type": "result", "id": request_id, "ok": False, "error": "no framework"})
+            return
+        bub_settings.persist(self._framework, values)
+        prefix = values.get("command_prefix")
+        if isinstance(prefix, str) and prefix:
+            self._command_prefix = prefix
+        # A new default model also becomes the session's model now, by running
+        # Bub's own `,model` command, so the choice is live rather than pending.
+        model = values.get("model")
+        if isinstance(model, str) and model.strip():
+            await self._route(f"{self._command_prefix}model {model.strip()}")
+        await self._emitter.emit({"type": "result", "id": request_id, "ok": True})
 
     async def _handle_approval_response(self, payload: dict[str, Any], request_id: Any) -> None:
         approval_id = str(payload.get("approval_id", ""))

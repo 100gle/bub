@@ -45,13 +45,17 @@ pub fn fill() -> Hsla {
     solid(0xF0F0F3)
 }
 
-/// The fill of a label chip.
-///
-/// A step darker than [`fill`], because chips sit on [`recess`] rather than on
-/// the canvas: at `fill` they would be a 7-level difference and read as text
-/// with a rumour of a box around it.
-pub fn tag() -> Hsla {
-    solid(0xE9E9EB)
+/// The recessed rail behind the settings navigation, one step below the canvas
+/// but a shade cooler than [`recess`] so a full-bleed page reads as chrome
+/// rather than as a message surface.
+pub fn sidebar() -> Hsla {
+    solid(0xF5F5F6)
+}
+
+/// The wash under a menu row on hover: one step lighter than [`fill`] because
+/// menu rows sit on [`surface`], not on [`recess`].
+pub fn hover() -> Hsla {
+    solid(0xF2F2F4)
 }
 
 /// `fill` one step darker, for hover and pressed states.
@@ -89,9 +93,43 @@ pub fn hairline() -> Hsla {
     veiled(0x00000014)
 }
 
+/// A hairline with a little more body, for the edge of a control that sits on a
+/// near-white surface — a white field or a white chip. [`hairline`] alone
+/// disappears against white; this holds the shape without becoming a rule.
+pub fn edge() -> Hsla {
+    veiled(0x0000001A)
+}
+
+// ---- Primary ---------------------------------------------------------------
+
+/// The filled primary control: the send plate and the chosen segment.
+///
+/// Near-black rather than the blue of [`accent`], which is the shape a native
+/// Mac control takes — a filled default button reads as ink, and colour is
+/// spent on state (focus, selection, the model light) instead of on every
+/// action. It is also what keeps a window with a model picker, a permission
+/// menu and a settings page from turning into four competing blues.
+pub fn primary() -> Hsla {
+    solid(0x1D1D1F)
+}
+
+pub fn primary_hover() -> Hsla {
+    solid(0x2C2C2E)
+}
+
+pub fn primary_active() -> Hsla {
+    solid(0x0A0A0B)
+}
+
+/// Text and glyphs drawn on top of [`primary`].
+pub fn on_primary() -> Hsla {
+    solid(0xFFFFFF)
+}
+
 // ---- Accent and state -----------------------------------------------------
 
-/// The single interactive colour in the window.
+/// The single interactive colour in the window: focus rings, links, and the
+/// selected row in a menu. Filled actions use [`primary`] instead.
 pub fn accent() -> Hsla {
     solid(0x0071E3)
 }
@@ -102,6 +140,11 @@ pub fn accent_hover() -> Hsla {
 
 pub fn accent_active() -> Hsla {
     solid(0x0068CF)
+}
+
+/// A very light wash of [`accent`], for a selected menu row.
+pub fn accent_wash() -> Hsla {
+    veiled(0x0071E30F)
 }
 
 // ---- State ----------------------------------------------------------------
@@ -123,10 +166,14 @@ pub fn danger_wash() -> Hsla {
     veiled(0xFF3B3012)
 }
 
+/// The warning colour at wash strength, for the offline badge in the chrome.
+pub fn warning_wash() -> Hsla {
+    veiled(0xFF9F0A14)
+}
+
 // ---- Metrics --------------------------------------------------------------
 
-/// Corner radii, in the order they nest: a chip inside a card inside a panel.
-pub const RADIUS_CHIP: Pixels = px(6.);
+/// Corner radii, in the order they nest: a row inside a card inside a page.
 pub const RADIUS_CONTROL: Pixels = px(9.);
 pub const RADIUS_CARD: Pixels = px(12.);
 pub const RADIUS_BUBBLE: Pixels = px(18.);
@@ -138,16 +185,20 @@ pub const RADIUS_MARK: Pixels = px(17.);
 /// instead of stretching lines to the panel.
 pub const CONTENT_MAX: Pixels = px(720.);
 
-/// The agent panel's default, minimum, and maximum width.
-pub const PANEL_WIDTH: Pixels = px(320.);
-pub const PANEL_MIN: Pixels = px(272.);
-pub const PANEL_MAX: Pixels = px(460.);
+/// The navigation rail: how wide it is, and how wide the reading column on a
+/// settings page is bounded to once the rail is subtracted.
+pub const SIDEBAR: Pixels = px(208.);
+pub const SETTINGS_MAX: Pixels = px(640.);
 
-/// The square hit area of a bare icon button.
-pub const CONTROL: Pixels = px(28.);
+/// Floating menus: how narrow a picker may get before its labels truncate.
+pub const MENU_MIN_W: Pixels = px(232.);
+pub const MENU_MAX_W: Pixels = px(360.);
 
 /// The composer's circular action button.
 pub const ACTION: Pixels = px(28.);
+
+/// A pill control inside the composer's toolbar (attach, permissions, model).
+pub const TOOLBAR_H: Pixels = px(28.);
 
 /// The two switch dimensions, chosen so the knob is a whole circle inside the
 /// track: a 36x20 track with 2px of padding holds a 16px knob exactly.
@@ -158,6 +209,7 @@ pub const SWITCH_KNOB: Pixels = px(16.);
 // ---- Type -----------------------------------------------------------------
 
 pub const TEXT_DISPLAY: Pixels = px(22.);
+pub const TEXT_TITLE: Pixels = px(17.);
 pub const TEXT_BODY: Pixels = px(15.);
 pub const TEXT_UI: Pixels = px(13.);
 pub const TEXT_CAPTION: Pixels = px(12.);
