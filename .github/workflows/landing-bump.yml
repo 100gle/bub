@@ -19,10 +19,35 @@ permissions:
   vulnerability-alerts: read
 
 jobs:
-  bump:
+  check-alerts:
     if: >-
       vars.LANDING_MODEL != '' &&
-      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      vulnerability-alerts: read
+    outputs:
+      count: ${{ steps.alerts.outputs.count }}
+    env:
+      GH_TOKEN: ${{ secrets.LANDING_GITHUB_TOKEN || github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Check open security alerts
+        id: alerts
+        run: |
+          count=$(gh api --method GET "repos/$GH_REPO/dependabot/alerts" -f state=open -f per_page=1 --jq 'length')
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          if [ "$count" -eq 0 ]; then
+            echo "No open Dependabot alerts."
+          fi
+
+  bump:
+    needs: [check-alerts]
+    if: >-
+      always() && !cancelled() && vars.LANDING_MODEL != '' &&
+      (((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+        needs.check-alerts.result == 'success' && needs.check-alerts.outputs.count == '1') ||
        github.event_name == 'repository_dispatch' ||
        (github.event_name == 'workflow_run' &&
         github.event.workflow_run.conclusion == 'failure' &&
@@ -34,6 +59,7 @@ jobs:
     concurrency:
       group: landing-security-bump-${{ github.repository_id }}
       cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
