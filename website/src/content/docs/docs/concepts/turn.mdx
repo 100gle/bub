@@ -11,14 +11,14 @@ A turn belongs to `bub[app]`. A direct `core.Agent.run()` call has no turn — t
 
 ## Turn, run, and step {#turn-run-step}
 
-Three different "ones" stack inside each other. Separate them first:
+There are three granularities of "one" here. Separate them first:
 
 ```mermaid
 flowchart LR
-  T["Turn<br/>all the work one message causes"] --> R["Run<br/>one agent.run() call"] --> S["Step<br/>one model call plus the tools it asks for"]
+  T["Turn<br/>all the work one message causes"] --> R["Run<br/>one agent.run() call"] --> S["Step<br/>one model call + the tools it requires"]
 ```
 
-turn ⊃ run ⊃ step: a turn usually contains one run, and a run contains several steps. The reverse does not hold — when you use the SDK directly, an `agent.run()` call stands alone with no turn, while a step always belongs to a run.
+turn ⊃ run ⊃ step: a turn usually contains one run, and a run contains multiple steps. The reverse does not hold — when using the SDK directly, an `agent.run()` call can exist independently, with no turn; a step always belongs to a run.
 
 ## Why a turn exists {#why-a-turn}
 

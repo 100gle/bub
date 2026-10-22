@@ -1,6 +1,6 @@
 ---
 title: Overview
-description: Why Bub was redesigned, and which responsibility boundaries it defines.
+description: Why Bub was redesigned and which responsibility boundaries it defines
 prev: false
 next: false
 ---
@@ -9,57 +9,55 @@ import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
 ## Background {#background}
 
-Bub used to keep everything in the main package. Every new message channel meant another class under `bub.channels` plus a batch of tools or skills, and every new capability meant another switch. The author recorded the call at the time in [Why we rewrote Bub](/posts/why-rewrite-bub/):
+Bub took its inspiration from self-evolving agents like OpenClaw and nanobot, so at first it piled every feature into the main package:
 
-> If we kept going in that direction, Bub would eventually become another Nanobot, or even another OpenClaw. [...] Most users only need one or two providers and one or two channels, yet they still end up staring at a wall of settings and switches. Even if most of them are disabled by default, the complexity is still there, and users still get lost in it.
+- Every new message channel required adding a class under `bub.channels`, plus a batch of tools or skills;
+- Every new capability required one more switch.
+- …
 
-So the rewrite took the opposite direction:
+As a result, even if a user only used one or two channels and one or two capabilities, they still faced dozens of switches and configuration options, and were simply drowned in a sea of options without knowing where to start.
 
-> My answer is to split extra functionality out of the core and move to a model with a **carefully designed lightweight kernel** plus **freely vibe-coded feature plugins**.
+So Bub was rewritten — stripping out extra functionality and leaving only a carefully designed lightweight kernel and a freely composable plugin architecture.
 
-The kernel has to be stable, understandable by agents, and quality-controlled by maintainers. Plugins can be written however people like, even generated on the spot by an agent. One maintenance model is strict; the other is loose.
+As large models have developed and evolved, agents today are no longer the early chatbots that only did question-and-answer. They have fully become operators and executors on equal footing with people. So, like other agent tools, Bub has faced social questions since its birth: how to collaborate with people, how to hand off work, and how to stay visible during execution.
 
-Which raises the question: **once the pieces are split, where do the boundaries go?** This section is those boundaries. The four cards below lead to one page each.
+On the basis of a carefully designed architecture, it should have clear contractual boundaries like Isaac Asimov's Three Laws of Robotics: clear command boundaries, traceable history, and neutral operation, ultimately evolving from "assistant behavior" to "collaboration infrastructure."
 
 ## The journey of one interaction {#journey}
 
-Take the most common interaction: you ask something in the terminal, and Bub answers.
+Looking across all agent designs, the core interaction flow is as follows, and Bub is no exception:
 
 ```mermaid
 flowchart LR
-  A["message"] --> B["prepare"] --> C["loop"] --> D["wrap up"] --> E["reply"]
-  C -.-> T[("tape")]
+  A["Receive input"] --> B["Pre-processing"] --> C["Loop"] --> D["Post-processing"] --> E["Produce output"]
+  C -.-> T[("Conversation history")]
 ```
 
-**Prepare** decides which session the message belongs to, restores what the previous turn left behind, and turns the message into a prompt. **Loop** takes the prompt to the model, runs any tools the model asks for, feeds the results back into the context, and asks again until the model answers without asking for tools. **Wrap up** saves the result, packages it as an outbound message, and hands it to the channel.
-
-Of the three, only the middle one is general. It does not matter whether the message came from a terminal, Telegram, or anywhere else: the "model ⇄ tools" stretch is identical. The two stages around it both deal with where a message comes from and where the reply goes, and that is exactly the part that changes with deployment.
-
-That is where the line falls. The loop stays in the kernel; both ends belong to the app.
+The whole flow still falls within software engineering. This means that apart from the two ends of receiving messages and producing output, every other process is an intermediate process, and most designs in the industry do their engineering in the intermediate process.
 
 ## Responsibility boundaries {#concepts}
 
-Along that line, Bub splits into four responsibility boundaries. They have no required order; browse them as you need.
+Along this chain, Bub can be divided into the following responsibility boundaries. The boundaries have no dependency order; you can browse them as needed.
 
 <CardGrid>
   <LinkCard
     title="Turn"
-    description="Defines the full flow. One message from arrival to reply can be split into named stages."
+    description="Defines the complete flow. The process from receiving to responding can be divided into multiple stages."
     href="/docs/concepts/turn/"
   />
   <LinkCard
     title="Tape"
-    description="Provides history and context. The record is append-only, and the model reads from a starting point you choose."
+    description="Adds history and context. The conversation history is append-only, and the model can retrieve the complete record from a starting point as needed."
     href="/docs/concepts/tape/"
   />
   <LinkCard
     title="Events"
-    description="Lets you watch and intervene. Every model call and tool execution reports a start, an end, and a result."
+    description="Makes the run open to intervention. Every model call and tool execution has a beginning, an end, and a result."
     href="/docs/concepts/events/"
   />
   <LinkCard
     title="Extension points"
-    description="Gives new logic a place to attach. Tools, skills, channels, and plugins each provide one."
+    description="Decides how new logic plugs in. Tools, skills, channels, and plugins all have a place to plug in."
     href="/docs/concepts/extension-points/"
   />
 </CardGrid>
