@@ -186,7 +186,3 @@ tape 名称由工作区路径和会话 ID 的哈希拼成。所以同一个会�
 要换存储，应用用 `provide_tape_store`。要选上下文，用 `build_tape_context`。[SQLAlchemy 指南](/zh-cn/docs/integrations/storage/)演示了这条插件路线。直接用 SDK 的服务，按[存储](#storage)一节的说明把实现传给 `Agent(store=...)`。
 
 内置应用会从 tape 记录里恢复部分会话设置。其他本轮状态要自己持久化。
-
-## 下一步 {#next-steps}
-
-[事件](/zh-cn/docs/concepts/events/#recording)讲 TapeRecorder 具体记下哪些事件、写进哪些条目；[扩展点](/zh-cn/docs/concepts/extension-points/)帮你判断换存储、换上下文这些改动该放哪一层。

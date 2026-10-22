@@ -196,7 +196,3 @@ To deny a call, return the corresponding decision. Other app hooks follow their 
 For plugin examples, see [Hooks](/docs/app/hooks/). For ordering and signatures, see the [hooks reference](/docs/reference/hooks/#interception-through-pluginagenthooks). The EventBus is available in the base SDK install.
 
 `framework.events` is a separate bus that publishes app-level events: commands, channel work, and user input, through `CommandChanged`, `WorkChanged`, and `PromptChanged` from `bub.application`. Subscribing and unsubscribing are still `on()` and `off()`. The two buses are independent: `framework.events` knows nothing about model-call details, and `agent.events` knows nothing about channels.
-
-## Next steps {#next-steps}
-
-To see all three kinds of information in a concrete implementation, read the [context section of Tape](/docs/concepts/tape/#context). To decide between an event handler and a plugin hook for a given need, read [Extension points](/docs/concepts/extension-points/).

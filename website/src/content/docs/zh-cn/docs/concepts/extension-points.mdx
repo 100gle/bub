@@ -92,7 +92,3 @@ agent 也可以用一条[文本命令](/zh-cn/docs/sdk/tools/#call-a-tool-withou
 - 已经用 `provide_tape_context` 选了上下文，就不要再在 `build_prompt` 里拼一遍历史。
 
 判断标准很简单：**这段逻辑如果被删掉，会不会有别的路径补不上？** 如果两条路径都能补上，就删掉一条。
-
-## 下一步 {#next-steps}
-
-先按要用的能力选依赖，再按宿主选调用入口。一个 Python 服务可以复用应用插件，同时保留自己的请求处理和流。[复用插件](/zh-cn/docs/sdk/reuse-plugins/)讲怎么直接用组件，也讲 framework hooks 在嵌入的宿主里怎么接。

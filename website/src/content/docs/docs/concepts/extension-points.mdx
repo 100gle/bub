@@ -92,7 +92,3 @@ This is the most common extension-design mistake, and the cost is that nobody ca
 - If `provide_tape_context` already selects the context, do not rebuild history again in `build_prompt`.
 
 A simple test: **if you deleted this logic, would another path fail to cover it?** If two paths both cover it, delete one.
-
-## Next steps {#next-steps}
-
-Pick dependencies by the capability you need, then pick an entry point by the host. A Python service can reuse app plugins while keeping its own request handling and streaming. [Reusing plugins](/docs/sdk/reuse-plugins/) covers using components directly and wiring framework hooks into an embedded host.

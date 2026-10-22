@@ -196,7 +196,3 @@ async def mark_reviewed() -> None:
 插件示例见 [Hooks](/zh-cn/docs/app/hooks/)。顺序和签名见 [Hooks 参考](/zh-cn/docs/reference/hooks/#interception-through-pluginagenthooks)。EventBus 在基础 SDK 安装里就有。
 
 `framework.events` 是另一个总线，发布应用层的事件：命令、渠道工作和用户输入，用 `bub.application` 里的 `CommandChanged`、`WorkChanged` 和 `PromptChanged`。订阅和取消订阅，还是 `on()` 和 `off()`。它和 agent 事件总线互相独立——`framework.events` 不知道模型调用的细节，`agent.events` 不知道渠道的存在。
-
-## 下一步 {#next-steps}
-
-要同时看这三类信息怎么落到具体实现，读 [Tape 的记录一节](/zh-cn/docs/concepts/tape/#context)。要判断某个需求该用事件处理器还是插件 hook，读[扩展点](/zh-cn/docs/concepts/extension-points/)。

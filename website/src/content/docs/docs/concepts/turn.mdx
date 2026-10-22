@@ -79,7 +79,3 @@ Replacing `run_model` changes this step. An echo plugin, for example, can return
 If the model stage raises an unhandled exception, the framework runs `save_state`, then skips rendering and dispatch. The outer error path calls `on_error(stage="turn", ...)` and raises the exception again. The built-in error observer can send an error reply through outbound dispatch. A failure in one `on_error` observer does not stop the other observers.
 
 Use `async with framework.running():` when your hooks provide stores or other app resources. It opens those resources and releases them on exit. The built-in per-message lifespan opens during state loading and closes in `save_state`.
-
-## Next steps {#next-steps}
-
-Use [plugin setup](/docs/app/plugins/) to register your implementation. For common changes, see [Hooks](/docs/app/hooks/). For exact signatures and ordering, see the [hooks reference](/docs/reference/hooks/#turn-hooks).

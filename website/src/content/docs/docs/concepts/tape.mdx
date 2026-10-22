@@ -186,7 +186,3 @@ The tape name combines hashes of the workspace path and the session ID. The same
 To change the store, the app uses `provide_tape_store`. To choose context, it uses `build_tape_context`. The [SQLAlchemy guide](/docs/integrations/storage/) shows that plugin route. For a service that uses the SDK directly, pass the implementation to `Agent(store=...)` as shown in [Storage](#storage).
 
 The built-in app restores some session settings from tape records. Any other per-turn state is yours to persist.
-
-## Next steps {#next-steps}
-
-[Events](/docs/concepts/events/#recording) covers exactly which events TapeRecorder writes and which entries they produce. [Extension points](/docs/concepts/extension-points/) helps you decide which layer a change like a new store or a new context belongs in.
