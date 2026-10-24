@@ -124,7 +124,7 @@ async with republic.get_model(
 
 ## 设置指令
 
-`system_prompt` 接收文本、函数，或按顺序排列的两者。函数接收 `PromptContext`，支持同步和异步。Agent 在每个模型步骤前渲染这些片段，忽略空结果，再用空行拼接。
+`system_prompt` 接收文本、函数，或按顺序排列的两者。函数接收 `PromptContext`，支持同步和异步。Agent 在每轮运行的第一个模型步骤前渲染一次这些片段，忽略空结果，再用空行拼接；同一轮运行的后续步骤复用这段文本。
 
 ```python
 from bub.core import PromptContext
@@ -137,7 +137,7 @@ def customer(context: PromptContext) -> str | None:
     return None
 ```
 
-`PromptContext` 包含当前步骤的 prompt、提供给模型的工具、模型标识、Tape、本轮状态和 Agent。`available_tools` 列出 Agent 注册的工具。使用 `agent.system_prompt.remove(section)` 可以移除片段。
+`PromptContext` 包含本轮运行的 prompt、提供给模型的工具、模型标识、Tape、本轮状态和 Agent。`available_tools` 列出 Agent 注册的工具。使用 `agent.system_prompt.remove(section)` 可以移除片段。
 
 <a id="tapes-and-state"></a>
 <a id="sessions-and-tapes"></a>
@@ -169,7 +169,7 @@ def customer(context: PromptContext) -> str | None:
 
 ## 定制步骤准备方式
 
-当工具选择需要自己的业务逻辑时，可以继承 `Agent` 并重写 `prepare_tools(tape, prompt)`。默认提供传入的工具，排除 `exposure="command"`。`tape.context.state` 就是本轮状态。
+当工具选择需要自己的业务逻辑时，可以继承 `Agent` 并重写 `prepare_tools(tape, prompt)`。默认提供传入的工具，排除 `exposure="command"`。Agent 在每轮运行的第一个模型步骤前准备一次工具，之后每一步都提供同一组工具；调用不在其中的工具时，会重新执行 `prepare_tools(tape, None)` 来解析，因此运行中新变为可用的工具仍可调用。`tape.context.state` 就是本轮状态。
 
 运行过程中到达的新消息和继续运行时的下一步提示，由两个循环事件控制：
 

@@ -124,7 +124,7 @@ A `LLMCallStarted` handler can change the requested model. With a Republic chat 
 
 ## Set the instructions
 
-`system_prompt` accepts text, a function, or an ordered list of either. Functions receive a `PromptContext` and may be synchronous or asynchronous. The agent renders the sections before each model step, omits empty results, and joins the rest with blank lines.
+`system_prompt` accepts text, a function, or an ordered list of either. Functions receive a `PromptContext` and may be synchronous or asynchronous. The agent renders the sections once per run, before its first model step, omits empty results, and joins the rest with blank lines. Later steps of the run reuse that text.
 
 ```python
 from bub.core import PromptContext
@@ -137,7 +137,7 @@ def customer(context: PromptContext) -> str | None:
     return None
 ```
 
-`PromptContext` carries the step's prompt, model-facing tools, model spec, tape, turn state, and agent. `available_tools` lists the agent's registered tools. Remove a section with `agent.system_prompt.remove(section)`.
+`PromptContext` carries the run's prompt, model-facing tools, model spec, tape, turn state, and agent. `available_tools` lists the agent's registered tools. Remove a section with `agent.system_prompt.remove(section)`.
 
 <a id="tapes-and-state"></a>
 <a id="sessions-and-tapes"></a>
@@ -169,7 +169,7 @@ The agent keeps supplied `Tool` objects in `agent.tools` by name and provider to
 
 ## Customize how a step is prepared
 
-Subclass `Agent` and override `prepare_tools(tape, prompt)` when selecting tools needs application logic. By default it offers the supplied tools except those marked `exposure="command"`. The tape's `context.state` is the run's state.
+Subclass `Agent` and override `prepare_tools(tape, prompt)` when selecting tools needs application logic. By default it offers the supplied tools except those marked `exposure="command"`. The agent prepares tools once per run, before its first model step, and offers the same tools in every step; a tool call outside them is resolved with a fresh `prepare_tools(tape, None)`, so tools that become available during the run are still callable. The tape's `context.state` is the run's state.
 
 Handle two loop events to send messages that arrive during a run or to steer a continuing run:
 
