@@ -140,7 +140,7 @@ class _LastAnchor:
 
 
 LAST_ANCHOR = _LastAnchor()
-type AnchorSelector = str | None | _LastAnchor
+type AnchorSelector = str | _LastAnchor | None
 type SelectedMessages = list[republic.Message] | Coroutine[Any, Any, list[republic.Message]]
 type ContextSelector = Callable[[Iterable[TapeEntry], "TapeContext"], SelectedMessages]
 

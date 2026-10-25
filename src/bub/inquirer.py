@@ -5,14 +5,13 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import typer
-from click import get_current_context
 from inquirer_textual import prompts
 from inquirer_textual.common.Choice import Choice
 from inquirer_textual.common.InquirerResult import InquirerResult
 from inquirer_textual.common.PromptSettings import PromptSettings
 from inquirer_textual.common.Shortcut import Shortcut
 
-from bub.application import PromptChanged, PromptKind
+from bub.application import PromptChanged, PromptKind, cli_events
 
 CheckboxValidator = Callable[[list[str]], bool | str]
 
@@ -22,11 +21,7 @@ CHECKBOX_HINT_SETTINGS = PromptSettings(shortcuts=[Shortcut("space", "toggle", "
 def ask_prompt(
     prompt: Callable[..., InquirerResult[Any]], message: str, *, kind: PromptKind = "question", **kwargs: Any
 ) -> Any:
-    from bub.framework import BubFramework
-
-    ctx = get_current_context(silent=True)
-    framework = ctx.find_root().obj if ctx else None
-    events = framework.events if isinstance(framework, BubFramework) else None
+    events = cli_events.get()
     if events is not None:
         asyncio.run(events.emit(PromptChanged(kind)))
     try:

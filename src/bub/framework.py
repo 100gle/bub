@@ -15,7 +15,7 @@ import typer
 from loguru import logger
 
 from bub import configure
-from bub.application import CommandChanged, Outcome
+from bub.application import CommandChanged, Outcome, cli_events
 from bub.channels.admission import AdmitDecision, SteeringInbox, TurnSnapshot
 from bub.channels.contracts import ChannelRouter, MessageHandler
 from bub.configure import DEFAULT_HOME
@@ -220,6 +220,8 @@ class BubFramework:
             reporter = ProgramStatus(sys.stdout)
             self.events.on(Event, reporter)
             ctx.call_on_close(lambda: self.events.off(Event, reporter))
+            token = cli_events.set(self.events)
+            ctx.call_on_close(lambda: cli_events.reset(token))
             ctx.with_resource(command_events())
 
         self._hook_runtime.call_many_sync("register_cli_commands", app=app)

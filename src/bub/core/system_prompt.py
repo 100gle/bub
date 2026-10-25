@@ -41,7 +41,7 @@ class PromptContext:
         return list(self.agent.tools.values())
 
 
-PromptSection = str | Callable[[PromptContext], str | None | Awaitable[str | None]]
+PromptSection = str | Callable[[PromptContext], str | Awaitable[str | None] | None]
 """Fixed text, or a function of the run's context returning text (empty or None to skip)."""
 
 S = TypeVar("S", bound=PromptSection)

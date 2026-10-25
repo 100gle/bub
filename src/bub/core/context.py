@@ -50,7 +50,7 @@ def _append_tool_call_entry(
     raw_calls = entry.payload.get("calls")
     if not isinstance(raw_calls, list) or not (tool_calls := [item for item in raw_calls if isinstance(item, dict)]):
         return []
-    fields = {key: entry.payload[key] for key in ("reasoning", "provider_data") if key in entry.payload}
+    fields: dict[str, Any] = {key: entry.payload[key] for key in ("reasoning", "provider_data") if key in entry.payload}
     message = to_message(
         {"role": "assistant", "content": entry.payload.get("content") or "", "tool_calls": tool_calls, **fields},
         calls,
