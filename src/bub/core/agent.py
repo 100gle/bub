@@ -716,7 +716,11 @@ class _RunTracker:
             self._text.clear()
         elif event.kind == "tool_result":
             for call, result in zip(self._calls, event.data.get("tool_results", []), strict=False):
-                self._messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
+                self._messages.append({
+                    "role": "tool",
+                    "tool_call_id": call["id"],
+                    "content": result.as_dict() if isinstance(result, BubError) else result,
+                })
         elif event.kind == "error":
             self._span.fail(RuntimeError(str(event.data.get("message", "agent failed"))))
 
