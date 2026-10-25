@@ -1,7 +1,7 @@
 import asyncio
 import contextlib
 import math
-from collections.abc import AsyncGenerator, AsyncIterable, Callable
+from collections.abc import AsyncGenerator, AsyncIterable, Awaitable, Callable, Iterable
 from datetime import datetime
 from functools import cached_property
 from hashlib import md5
@@ -11,8 +11,9 @@ from typing import Any
 
 from loguru import logger
 from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.completion import CompleteEvent, Completer, Completion, WordCompleter
 from prompt_toolkit.data_structures import Point
+from prompt_toolkit.document import Document
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import ANSI, AnyFormattedText, FormattedText
 from prompt_toolkit.history import FileHistory
@@ -27,6 +28,7 @@ from rich.tree import Tree
 
 import bub
 from bub.builtin.agent import BubAgent
+from bub.builtin.settings import load_session_settings
 from bub.channels.admission import AdmitDecision, TurnSnapshot
 from bub.channels.base import Interface
 from bub.channels.cli.ansi_bridge import render_to_ansi
@@ -211,12 +213,75 @@ class _CliToolCallRenderer:
         )
 
 
+class _CommandCompleter(Completer):
+    """Complete command names, and after the model command, model specs.
+
+    A typed ``provider:`` completes that provider's models; otherwise the models of every
+    available provider, the current model's first. Each list is fetched once, in the
+    background, and kept for the session.
+    """
+
+    def __init__(
+        self,
+        commands: Iterable[str],
+        *,
+        prefix: str,
+        current_model: Callable[[], str],
+        list_models: Callable[[str], Awaitable[list[str]]],
+        list_available_models: Callable[[str], Awaitable[list[str]]],
+    ) -> None:
+        self._commands = WordCompleter(list(commands), ignore_case=True, sentence=True)
+        self._model_command = f"{prefix}model "
+        self._current_model = current_model
+        self._list_models = list_models
+        self._list_available_models = list_available_models
+        self._models: dict[tuple[str, str], asyncio.Task[list[str]]] = {}
+
+    def get_completions(self, document: Document, complete_event: CompleteEvent) -> Iterable[Completion]:
+        if not document.text_before_cursor.startswith(self._model_command):
+            yield from self._commands.get_completions(document, complete_event)
+
+    async def get_completions_async(
+        self, document: Document, complete_event: CompleteEvent
+    ) -> AsyncGenerator[Completion, None]:
+        text = document.text_before_cursor
+        if not text.startswith(self._model_command):
+            for completion in self._commands.get_completions(document, complete_event):
+                yield completion
+            return
+        query = text.removeprefix(self._model_command).lstrip()
+        if " " in query:
+            return
+        provider, separator, _ = query.partition(":")
+        key = ("provider", provider) if separator else ("available", self._current_model())
+        for spec in await self._cached_models(key):
+            if query.lower() in spec.lower():
+                yield Completion(spec, start_position=-len(query))
+
+    async def _cached_models(self, key: tuple[str, str]) -> list[str]:
+        task = self._models.get(key)
+        if task is None:
+            task = self._models[key] = asyncio.create_task(self._fetch(key))
+        # Shielded so that typing on, which cancels this completion, does not cancel the fetch.
+        return await asyncio.shield(task)
+
+    async def _fetch(self, key: tuple[str, str]) -> list[str]:
+        kind, name = key
+        try:
+            if kind == "provider":
+                return await self._list_models(name)
+            return await self._list_available_models(name)
+        except Exception:
+            return []
+
+
 class CliChannel(Interface):
     """A simple CLI channel for testing and debugging."""
 
     name = "cli"
     _stop_event: asyncio.Event
     _initial_prompt: str | None = None
+    _session_model: str | None = None
 
     def __init__(self, on_receive: MessageHandler, get_agent: Callable[[], BubAgent], workspace: Path) -> None:
         self._on_receive = on_receive
@@ -257,6 +322,17 @@ class CliChannel(Interface):
         tape = self._agent.tape(session_tape_name(self._message_template["session_id"], self._workspace))
         info = await tape.info()
         self._last_tape_info = info
+        self._session_model = (await load_session_settings(tape)).get("model")
+
+    def _current_model(self) -> str:
+        return self._session_model or self._agent.settings.model
+
+    async def _list_models(self, provider: str) -> list[str]:
+        return await self._agent.settings.chat_model().list_models(provider)
+
+    async def _list_available_models(self, current_model: str) -> list[str]:
+        settings = self._agent.settings
+        return await settings.chat_model().list_all_models(settings.model_providers(current_model))
 
     def set_metadata(
         self, session_id: str | None = None, chat_id: str | None = None, *, initial_prompt: str | None = None
@@ -456,7 +532,13 @@ class CliChannel(Interface):
         tool_names = sorted(
             [*(f"{prefix}{name}" for name in self._agent.tools), f"{prefix}thinking"], key=_tool_sort_key
         )
-        completer = WordCompleter(tool_names, ignore_case=True, sentence=True)
+        completer = _CommandCompleter(
+            tool_names,
+            prefix=prefix,
+            current_model=self._current_model,
+            list_models=self._list_models,
+            list_available_models=self._list_available_models,
+        )
         prompt: PromptSession[str] = PromptSession(
             completer=completer,
             complete_while_typing=True,
@@ -503,7 +585,7 @@ class CliChannel(Interface):
         right = (
             f"thinking:{'expand' if self._expand_thinking else 'collapse'}  "
             f"speed:{speed_label}  "
-            f"model:{self._agent.settings.model}  "
+            f"model:{self._current_model()}  "
             f"entries:{field_of(info, 'entries', '-')} "
             f"anchors:{field_of(info, 'anchors', '-')} "
             f"last:{field_of(info, 'last_anchor', None) or '-'}"

@@ -298,25 +298,46 @@ async def test_run_model_stream_passes_none_when_state_has_no_model(tmp_path: Pa
     assert agent.run_stream_calls[-1][3] is None
 
 
-def test_builtin_provides_model_runtime_options(tmp_path: Path, load_config) -> None:
-    with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.delenv("BUB_MODEL", raising=False)
-        monkeypatch.delenv("BUB_FALLBACK_MODELS", raising=False)
-        config_file = load_config(
-            """
-model: openai:gpt-5
-fallback_models:
-  - anthropic:claude-sonnet-4-5
-  - openai:gpt-5
-""".strip()
-        )
-        _, impl, _ = _build_impl(tmp_path, config_file=config_file)
+@pytest.mark.asyncio
+async def test_builtin_model_options_list_configured_and_keyed_providers(tmp_path: Path, load_config) -> None:
+    from bub.builtin.model import BubModel
 
-        options = impl.provide_model_options(session_id="session")
+    listed: list[str] = []
+
+    async def list_models(self: BubModel, provider: str) -> list[str]:
+        listed.append(provider)
+        if provider == "broken":
+            raise RuntimeError("no listing")
+        return [f"{provider}:gpt-5", f"{provider}:gpt-5-mini"]
+
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        for name in list(os.environ):
+            if name.startswith("BUB_"):
+                monkeypatch.delenv(name)
+        monkeypatch.setattr(BubModel, "list_models", list_models)
+        config_file = load_config(
+            "model: openai:gpt-5\nfallback_models:\n  - anthropic:claude-sonnet-4-5\napi_key:\n  deepseek: sk-deepseek"
+        )
+        _, impl, agent = _build_impl(tmp_path, config_file=config_file)
+
+        options = await impl.provide_model_options(session_id="session")
 
         assert options is not None
         assert options.current_model == "openai:gpt-5"
-        assert [item.id for item in options.models] == ["openai:gpt-5", "anthropic:claude-sonnet-4-5"]
+        assert [item.id for item in options.models] == [
+            f"{provider}:{model}"
+            for provider in ("openai", "anthropic", "deepseek")
+            for model in ("gpt-5", "gpt-5-mini")
+        ]
+
+        tape = agent.tape(session_tape_name("session", impl.framework.workspace))
+        await tape.append_event("model_switch", {"model": "broken:model"})
+        options = await impl.provide_model_options(session_id="session")
+
+        assert options is not None
+        assert options.current_model == "broken:model"
+        assert [item.id for item in options.models][:2] == ["broken:model", "openai:gpt-5"]
+        assert listed[3:] == ["broken", "openai", "anthropic", "deepseek"]
 
 
 def test_system_prompt_appends_workspace_agents_file(tmp_path: Path) -> None:

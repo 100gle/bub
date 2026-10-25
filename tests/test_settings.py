@@ -379,3 +379,75 @@ def test_bub_model_resolves_custom_providers_and_default_fallbacks() -> None:
     ]
     assert [c.name for c in model.candidates("anthropic:claude")] == ["anthropic:claude"]
     assert model.client_kwargs("relay") == {"n": "relay"}
+
+
+@pytest.mark.asyncio
+async def test_bub_model_lists_provider_models_with_custom_provider_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import republic
+
+    from bub.builtin.model import BubModel
+
+    opened: list[tuple[str, dict[str, object]]] = []
+
+    class FakeProvider:
+        async def __aenter__(self) -> FakeProvider:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def list_models(self) -> list[republic.ModelInfo]:
+            return [republic.ModelInfo("gpt-b"), republic.ModelInfo("gpt-a"), republic.ModelInfo("gpt-a")]
+
+    def get_provider(name: str, **options: object) -> FakeProvider:
+        opened.append((name, options))
+        return FakeProvider()
+
+    monkeypatch.setattr(republic, "get_provider", get_provider)
+    model = BubModel("relay:gpt", providers={"relay": "openai"}, client_options=lambda name: {"n": name})
+
+    assert await model.list_models("relay") == ["relay:gpt-a", "relay:gpt-b"]
+    assert await model.list_models("OpenAI") == ["openai:gpt-a", "openai:gpt-b"]
+    assert opened == [("openai", {"n": "relay"}), ("openai", {"n": "openai"})]
+
+
+def test_model_providers_cover_explicitly_configured_providers(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in list(os.environ):
+        if name.startswith("BUB_"):
+            monkeypatch.delenv(name)
+    settings = AgentSettings(
+        model="OpenAI:gpt-5",
+        fallback_models=["anthropic:claude"],
+        api_key={"openrouter": "sk-or", "gemini": ""},
+        api_base={"zai": "https://zai.test"},
+        providers={"relay": {"type": "openai", "api_key": "sk-relay"}},
+    )
+
+    assert settings.model_providers("deepseek:chat") == [
+        "deepseek",
+        "openai",
+        "anthropic",
+        "relay",
+        "openrouter",
+        "zai",
+    ]
+    # A key shared by all providers names none of them.
+    assert AgentSettings(model="openai:gpt-5", api_key="sk-global").model_providers() == ["openai"]
+
+
+@pytest.mark.asyncio
+async def test_bub_model_lists_all_models_skipping_failed_providers(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bub.builtin.model import BubModel
+
+    async def list_models(self: BubModel, provider: str) -> list[str]:
+        if provider == "broken":
+            raise RuntimeError("cannot list")
+        return [f"{provider}:a", "shared:x"]
+
+    monkeypatch.setattr(BubModel, "list_models", list_models)
+
+    models = await BubModel("openai:a").list_all_models(["openai", "broken", "anthropic", "openai"])
+
+    assert models == ["openai:a", "shared:x", "anthropic:a"]

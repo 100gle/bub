@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -21,6 +21,9 @@ class ModelCandidate:
     name: str
     provider_name: str | None = None
 
+
+LIST_MODELS_TIMEOUT = 10.0
+"""Seconds allowed for listing one provider's models, pages included."""
 
 ClientOptions = Mapping[str, Any] | Callable[[str], Mapping[str, Any]]
 """Republic client options, or a function returning them for a provider name."""
@@ -90,6 +93,33 @@ class BubModel:
         if callable(self.client_options):
             return dict(self.client_options(provider))
         return dict(self.client_options or {})
+
+    async def list_models(self, provider: str) -> list[str]:
+        """List the ``provider:model`` specs ``provider`` (a custom name or a Republic type) offers."""
+        if custom_type := self.providers.get(provider):
+            provider_type = custom_type
+        else:
+            provider = provider_type = provider.lower()
+        async with (
+            asyncio.timeout(LIST_MODELS_TIMEOUT),
+            republic.get_provider(provider_type, **self.client_kwargs(provider)) as client,
+        ):
+            models = await client.list_models()
+        return sorted({f"{provider}:{model.id}" for model in models})
+
+    async def list_all_models(self, providers: Iterable[str]) -> list[str]:
+        """List the models of each provider concurrently, in order, skipping providers that fail to list."""
+        providers = list(dict.fromkeys(providers))
+        results = await asyncio.gather(*(self.list_models(provider) for provider in providers), return_exceptions=True)
+        models: list[str] = []
+        for provider, result in zip(providers, results, strict=True):
+            if isinstance(result, Exception):
+                logger.warning("failed to list models of provider={} error={}", provider, type(result).__name__)
+            elif isinstance(result, BaseException):
+                raise result
+            else:
+                models.extend(result)
+        return list(dict.fromkeys(models))
 
     def chat_options(self, provider: str, options: Mapping[str, Any]) -> dict[str, Any]:
         """Merge this model's generation options with a call's for ``provider``."""
