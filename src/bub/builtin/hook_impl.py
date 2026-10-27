@@ -160,6 +160,8 @@ class BuiltinImpl:
         app.command("install")(cli.install)
         app.command("uninstall")(cli.uninstall)
         app.command("update")(cli.update)
+        if self.framework.default_command is None:
+            self.framework.default_command = "chat"
 
     @hookimpl
     def onboard_config(self, current_config: dict[str, object]) -> dict[str, object] | None:

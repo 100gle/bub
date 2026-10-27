@@ -806,3 +806,37 @@ def test_onboard_invalid_plugin_does_not_write_config(tmp_path: Path, plugin_nam
     assert f"No onboard_config hook found for plugin '{plugin_name}'" in result.output
     assert "Available plugins: builtin" in result.output
     assert config_file.read_text() == original
+
+
+def test_bub_without_command_runs_chat(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls: list[tuple[str | None, Path]] = []
+
+    def fake_chat(ctx: typer.Context, initial_prompt: str | None = typer.Argument(None)) -> None:
+        calls.append((initial_prompt, ctx.ensure_object(BubFramework).workspace))
+
+    monkeypatch.setattr(cli, "chat", fake_chat)
+
+    result = CliRunner().invoke(_create_app(), ["--workspace", str(tmp_path)])
+
+    assert result.exit_code == 0, result.output
+    assert calls == [(None, tmp_path.resolve())]
+
+
+def test_plugin_default_command_overrides_chat(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+    framework = BubFramework()
+
+    class DefaultPlugin:
+        @hookimpl
+        def register_cli_commands(self, app: typer.Typer) -> None:
+            app.command("hello")(lambda: calls.append("hello"))
+            framework.default_command = "hello"
+
+    monkeypatch.setattr(cli, "chat", lambda: calls.append("chat"))
+    framework.load_hooks()
+    framework.plugin_manager.register(DefaultPlugin(), name="default-plugin")
+
+    result = CliRunner().invoke(framework.create_cli_app(), [])
+
+    assert result.exit_code == 0, result.output
+    assert calls == ["hello"]

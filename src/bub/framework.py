@@ -74,6 +74,16 @@ def _distribution_of(entry_point: Any) -> dict[str, str | None]:
     return {"distribution": dist.name, "version": dist.version}
 
 
+def _invoke_subcommand(ctx: typer.Context, name: str) -> None:
+    """Run the subcommand ``name`` of ``ctx``'s group with its defaults, as if it had been typed."""
+    group = ctx.command
+    command = group.get_command(ctx, name) if isinstance(group, typer.core.TyperGroup) else None
+    if command is None:
+        return
+    with command.make_context(name, [], parent=ctx) as sub_ctx:
+        command.invoke(sub_ctx)
+
+
 class BubFramework:
     """Minimal framework core. Everything grows from hook skills."""
 
@@ -95,6 +105,8 @@ class BubFramework:
         self._tape_store: TapeStore | AsyncTapeStore | None = None
         self._steering_inbox: SteeringInbox | None = None
         self._environments: dict[str, Environment | None] = {}
+        self.default_command: str | None = None
+        """CLI command run when ``bub`` is invoked without one; plugins set it from ``register_cli_commands``."""
         configure.load(self.config_file)
 
     @property
@@ -223,6 +235,8 @@ class BubFramework:
             token = cli_events.set(self.events)
             ctx.call_on_close(lambda: cli_events.reset(token))
             ctx.with_resource(command_events())
+            if ctx.invoked_subcommand is None and self.default_command is not None:
+                _invoke_subcommand(ctx, self.default_command)
 
         self._hook_runtime.call_many_sync("register_cli_commands", app=app)
         return app
