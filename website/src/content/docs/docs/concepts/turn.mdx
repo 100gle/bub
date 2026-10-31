@@ -1,0 +1,39 @@
+---
+title: Turn
+description: How the application layer turns one inbound message into replies, including the lifecycle stages, TurnState, and failure boundaries.
+sidebar:
+  label: Turn
+---
+
+A **Turn** is the complete lifecycle the application layer gives one inbound message, owned by `BubFramework`. It fixes the order and error boundaries of session resolution, input preparation, model execution, state saving, and reply delivery; an Agent Run is only the model execution stage inside it.
+
+## Lifecycle {#stages}
+
+`process_inbound()` sends every ordinary inbound message through the same set of stages:
+
+| Stage | Responsibility |
+| --- | --- |
+| `resolve_session` | Establish which session the message belongs to |
+| `load_state` | Restore session state and make the Agent available |
+| `build_prompt` | Recognize commands and construct model input |
+| `run_model` | Execute the Agent Run and produce model output |
+| `save_state` | Persist application state that must outlive the Turn |
+| `render_outbound` | Render model output into channel messages |
+| `dispatch_outbound` | Deliver replies through the matching channel |
+
+Each stage has a hook of the same name that can extend or replace the default behavior under its contract; signatures are in the [Hooks reference](/docs/reference/hooks/#turn-hooks).
+
+A Turn is not the same granularity as a Run: a direct command can finish inside a Turn without starting a model Run, and a Run created directly with `core.Agent` belongs to no Turn. A **Session** is the identity and recovery boundary that spans several messages, so one Session can contain many Turns; a session ID itself provides no lock, and whether concurrent Turns are allowed is decided by an admission policy or the host.
+
+## TurnState {#state}
+
+`TurnState` is a temporary dictionary shared by hooks, tools, and event handlers during the current execution. It lives only for this Turn or Run and is never persisted automatically.
+
+Data that must survive into the next Turn should be saved in `save_state` and restored in `load_state`. Conversation and tool round-trips belong to the Tape, not to `TurnState`; see [where data belongs](/docs/concepts/tape/#state). Keys starting with `_runtime_` are written by the runtime, and plugins should not depend on them.
+
+## Failure boundaries {#failures}
+
+- Once execution enters the model stage, `save_state` always runs in a `finally`, so a model error or timeout cannot skip it.
+- A failure in `resolve_session`, `load_state`, or `build_prompt` happens before that guarantee begins, so `save_state` does not run.
+- An unhandled exception goes to `on_error` to be observed and reported, and is then re-raised; `on_error` does not restore the Turn.
+- A Turn is not a transaction: files a tool already changed, requests it already sent, and other external side effects are not rolled back.

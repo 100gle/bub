@@ -1,0 +1,1489 @@
+---
+title: Python API
+description: bub.core 与应用层的公开 API 签名。
+---
+
+## `bub.core`
+
+### `Agent` {#agent}
+
+```python
+class Agent:
+    def __init__(
+        self,
+        *,
+        model: Model | None = None,
+        store: TapeStore | AsyncTapeStore | None = None,
+        tools: Iterable[Tool | BuiltinTool] = (),
+        system_prompt: SystemPrompt | PromptSection | Iterable[PromptSection] = (),
+        context: TapeContext | None = None,
+        sidecars: Sequence[TapeSidecar] = (),
+        max_steps: int = sys.maxsize,
+        max_tool_concurrency: int | None = None,
+        name: str = "agent",
+        command_prefix: str | None = None,
+    ) -> None: ...
+
+    def tape(self, name: str, *, state: TurnState | None = None) -> Tape: ...
+
+    @asynccontextmanager
+    async def session(
+        self,
+        name: str,
+        *,
+        state: TurnState | None = None,
+        merge_back: bool = True,
+    ) -> AsyncGenerator[Tape]: ...
+
+    @asynccontextmanager
+    async def run(
+        self,
+        prompt: str | list[UserContent],
+        *,
+        model: Model | None = None,
+        options: Mapping[str, Any] | None = None,
+        tape: str,
+        state: TurnState | None = None,
+        merge_back: bool = True,
+        metadata: dict[str, Any] | None = None,
+    ) -> AsyncGenerator[AsyncStreamEvents]: ...
+
+    async def start(
+        self,
+        prompt: str | list[UserContent],
+        *,
+        model: Model | None = None,
+        options: Mapping[str, Any] | None = None,
+        tape: str,
+        state: TurnState | None = None,
+        merge_back: bool = True,
+        metadata: dict[str, Any] | None = None,
+    ) -> AsyncStreamEvents: ...
+
+    async def run_on(
+        self,
+        tape: Tape,
+        prompt: list[UserContent],
+        *,
+        model: Model | None = None,
+        options: Mapping[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+        span: Span | None = None,
+        on_close: Callable[[], Awaitable[None]] | None = None,
+    ) -> AsyncStreamEvents: ...
+
+    async def run_once(
+        self,
+        prompt: list[UserContent] | None,
+        *,
+        model: Model | None = None,
+        options: Mapping[str, Any] | None = None,
+        tape: Tape,
+        state: StreamState | None = None,
+        pending: Sequence[list[UserContent]] = (),
+    ) -> AsyncGenerator[StreamEvent, None]: ...
+
+    async def run_command(self, tape: Tape, line: str) -> str: ...
+
+    async def prepare_tools(
+        self,
+        tape: Tape,
+        prompt: list[UserContent] | None,
+    ) -> list[Tool]: ...
+```
+
+### `Model` {#model}
+
+```python
+Model = republic.ChatModel | ModelClient
+```
+
+### `ModelClient`
+
+```python
+class ModelClient(Protocol):
+    max_tokens: int | None
+
+    @property
+    def spec(self) -> str: ...
+
+    def open_stream(
+        self,
+        messages: list[republic.Message],
+        *,
+        spec: str,
+        options: Mapping[str, Any],
+    ) -> AbstractAsyncContextManager[tuple[str, republic.Stream[Any]]]: ...
+```
+
+### `ChatModelClient`
+
+```python
+class ChatModelClient:
+    max_tokens: int | None = None
+
+    def __init__(self, model: republic.ChatModel) -> None: ...
+
+    @property
+    def spec(self) -> str: ...
+
+    @asynccontextmanager
+    async def open_stream(
+        self,
+        messages: list[republic.Message],
+        *,
+        spec: str,
+        options: Mapping[str, Any],
+    ) -> AsyncIterator[tuple[str, republic.Stream[Any]]]: ...
+```
+
+### `ToolExposure`
+
+```python
+ToolExposure = Literal["auto", "direct", "code", "command"]
+```
+
+### `ToolContext`
+
+```python
+@dataclass(frozen=True)
+class ToolContext:
+    tape: Tape
+    run_id: str | None = None
+    state: dict[str, Any] = field(default_factory=dict)
+    code_mode: bool = False
+    command: bool = False
+    events: EventBus | None = field(default=None, repr=False, compare=False)
+```
+
+### `Tool` {#tools}
+
+```python
+@dataclass(frozen=True)
+class Tool:
+    name: str
+    handler: Callable[..., Any]
+    description: str = ""
+    parameters: dict[str, Any] = field(default_factory=dict)
+    context: bool = False
+    exposure: ToolExposure = "auto"
+    renderer: Callable[[Any], str] | None = None
+    output_schema: dict[str, Any] | None = None
+    deferred: bool = False
+
+    async def run(self, *args: Any, **kwargs: Any) -> Any: ...
+    def render(self, result: Any) -> str: ...
+    def to_schema(self) -> dict[str, Any]: ...
+
+    @classmethod
+    def from_callable(
+        cls,
+        func: Callable[..., Any],
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        context: bool = False,
+        exposure: ToolExposure = "auto",
+        renderer: Callable[[Any], str] | None = None,
+        deferred: bool = False,
+    ) -> Tool: ...
+```
+
+### `tool`
+
+```python
+@overload
+def tool(
+    func: Callable,
+    *,
+    name: str | None = ...,
+    model: type[BaseModel] | None = ...,
+    description: str | None = ...,
+    context: bool = ...,
+    exposure: ToolExposure = ...,
+    renderer: Callable[[Any], str] | None = ...,
+    deferred: bool = ...,
+) -> Tool: ...
+
+@overload
+def tool(
+    func: None = ...,
+    *,
+    name: str | None = ...,
+    model: type[BaseModel] | None = ...,
+    description: str | None = ...,
+    context: bool = ...,
+    exposure: ToolExposure = ...,
+    renderer: Callable[[Any], str] | None = ...,
+    deferred: bool = ...,
+) -> Callable[[Callable], Tool]: ...
+
+def tool(
+    func: Callable | None = None,
+    *,
+    name: str | None = None,
+    model: type[BaseModel] | None = None,
+    description: str | None = None,
+    context: bool = False,
+    exposure: ToolExposure = "auto",
+    renderer: Callable[[Any], str] | None = None,
+    deferred: bool = False,
+) -> Tool | Callable[[Callable], Tool]: ...
+```
+
+### `content_result`
+
+```python
+def content_result(content: Sequence[UserContent]) -> dict[str, Any]: ...
+```
+
+### `result_content`
+
+```python
+def result_content(result: Any) -> list[UserContent]: ...
+```
+
+### `PromptContext`
+
+```python
+@dataclass(frozen=True)
+class PromptContext:
+    agent: Agent
+    tape: Tape
+    prompt: list[UserContent]
+    tools: list[Tool]
+    model: str
+
+    @property
+    def state(self) -> TurnState: ...
+
+    @property
+    def available_tools(self) -> list[Tool]: ...
+```
+
+### `PromptSection` {#system-prompt}
+
+```python
+PromptSection = str | Callable[[PromptContext], str | Awaitable[str | None] | None]
+```
+
+### `SystemPrompt`
+
+```python
+class SystemPrompt:
+    def __init__(self, sections: Iterable[PromptSection] = ()) -> None: ...
+
+    @classmethod
+    def of(
+        cls,
+        value: SystemPrompt | PromptSection | Iterable[PromptSection],
+    ) -> SystemPrompt: ...
+
+    @property
+    def sections(self) -> tuple[PromptSection, ...]: ...
+
+    def add(self, section: S) -> S: ...
+    def remove(self, section: PromptSection) -> None: ...
+    async def render(self, context: PromptContext) -> str: ...
+```
+
+### `TapeEntry` {#tapeentry}
+
+```python
+@dataclass(frozen=True)
+class TapeEntry:
+    id: int
+    kind: str
+    payload: dict[str, Any]
+    meta: dict[str, Any] = field(default_factory=dict)
+    date: str = field(default_factory=utc_now)
+
+    def copy(self) -> TapeEntry: ...
+
+    @classmethod
+    def message(cls, message: dict[str, Any], **meta: Any) -> TapeEntry: ...
+
+    @classmethod
+    def system(cls, content: str, **meta: Any) -> TapeEntry: ...
+
+    @classmethod
+    def anchor(
+        cls,
+        name: str,
+        state: dict[str, Any] | None = None,
+        **meta: Any,
+    ) -> TapeEntry: ...
+
+    @classmethod
+    def tool_call(
+        cls,
+        calls: list[dict[str, Any]],
+        *,
+        content: str = "",
+        **meta: Any,
+    ) -> TapeEntry: ...
+
+    @classmethod
+    def tool_result(cls, results: list[Any], **meta: Any) -> TapeEntry: ...
+
+    @classmethod
+    def error(cls, error: BubError, **meta: Any) -> TapeEntry: ...
+
+    @classmethod
+    def event(
+        cls,
+        name: str,
+        data: dict[str, Any] | None = None,
+        **meta: Any,
+    ) -> TapeEntry: ...
+```
+
+### `TapeContext`
+
+```python
+@dataclass(frozen=True)
+class TapeContext:
+    anchor: AnchorSelector = LAST_ANCHOR
+    select: ContextSelector | None = None
+    state: dict[str, Any] = field(default_factory=dict)
+
+    def build_query(self, query: TapeQuery) -> TapeQuery: ...
+```
+
+### `default_tape_context`
+
+```python
+def default_tape_context() -> TapeContext: ...
+```
+
+### `TapeInfo`
+
+```python
+@dataclass(frozen=True)
+class TapeInfo:
+    name: str
+    entries: int
+    anchors: int
+    last_anchor: str | None
+    entries_since_last_anchor: int
+    last_token_usage: int | None
+    last_token_cache_hit_rate: float | None
+```
+
+### `AnchorSummary`
+
+```python
+@dataclass(frozen=True)
+class AnchorSummary:
+    name: str
+    state: dict[str, object]
+```
+
+### `Tape` {#tape}
+
+```python
+@dataclass(frozen=True)
+class Tape:
+    store: AsyncTapeStore
+    context: TapeContext
+    sidecars: tuple[TapeSidecar, ...] = field(default=(), repr=False)
+
+    @property
+    def name(self) -> str: ...
+
+    def with_context(self, context: TapeContext) -> Tape: ...
+    def scoped(self, name: str, context: TapeContext | None = None) -> Tape: ...
+    def query(self) -> TapeQuery[AsyncTapeStore]: ...
+    async def info(self) -> TapeInfo: ...
+    async def anchors(self, limit: int = 20) -> list[AnchorSummary]: ...
+    async def search(self, query: TapeQuery[AsyncTapeStore]) -> list[TapeEntry]: ...
+    async def append_event(self, name: str, payload: dict[str, Any], **meta: Any) -> None: ...
+    async def read_messages(self) -> list[republic.Message]: ...
+
+    async def handoff(
+        self,
+        *,
+        name: str,
+        state: dict[str, Any] | None = None,
+        **meta: Any,
+    ) -> list[TapeEntry]: ...
+
+    async def reset(
+        self,
+        *,
+        state: dict[str, Any] | None = None,
+        keep_sidecars: Iterable[str] = (),
+    ) -> None: ...
+
+    @asynccontextmanager
+    async def fork_tape(self, merge_back: bool = True) -> AsyncGenerator[Tape, None]: ...
+```
+
+### `session_tape_name`
+
+```python
+def session_tape_name(session_id: str, workspace: Path) -> str: ...
+```
+
+### `TapeSidecar` {#tapesidecar}
+
+```python
+class TapeSidecar(Protocol):
+    @property
+    def name(self) -> str: ...
+
+
+def sidecar_tape_name(owner: str, sidecar: str) -> str: ...
+```
+
+Sidecar 由配套 Tape `<owner>__sidecar__<name>` 承载：随主 Tape 分支、合并和重置，条目不进入主上下文。挂载方式见 [Sidecar](/zh-cn/docs/sdk/tape/#sidecars)，应用层的提供方式见 [`provide_tape_sidecar`](/zh-cn/docs/reference/hooks/#provide_tape_sidecar)。
+
+### `TapeStore` {#tape-store}
+
+```python
+class TapeStore(Protocol):
+    def list_tapes(self) -> list[str]: ...
+    def reset(self, tape: str) -> None: ...
+    def fetch_all(self, query: TapeQuery) -> Iterable[TapeEntry]: ...
+    def append(self, tape: str, entry: TapeEntry) -> None: ...
+```
+
+### `AsyncTapeStore`
+
+```python
+class AsyncTapeStore(Protocol):
+    async def list_tapes(self) -> list[str]: ...
+    async def reset(self, tape: str) -> None: ...
+    async def fetch_all(self, query: TapeQuery) -> Iterable[TapeEntry]: ...
+    async def append(self, tape: str, entry: TapeEntry) -> None: ...
+```
+
+### `TapeQuery` {#tapequery}
+
+```python
+@dataclass(frozen=True)
+class TapeQuery[T: TapeStore | AsyncTapeStore]:
+    tape: str
+    store: T
+
+    def query(self, value: str) -> Self: ...
+    def after_anchor(self, name: str) -> Self: ...
+    def last_anchor(self) -> Self: ...
+    def between_anchors(self, start: str, end: str) -> Self: ...
+    def between_dates(self, start: str | date_type, end: str | date_type) -> Self: ...
+    def kinds(self, *kinds: str) -> Self: ...
+    def limit(self, value: int) -> Self: ...
+
+    @overload
+    def all(self: TapeQuery[TapeStore]) -> Iterable[TapeEntry]: ...
+
+    @overload
+    async def all(self: TapeQuery[AsyncTapeStore]) -> Iterable[TapeEntry]: ...
+```
+
+| 过滤条件 | 语义 |
+| --- | --- |
+| `after_anchor(name)` / `last_anchor()` | 指定 anchor 或最近一个 anchor 之后；Tape 中没有 anchor 时抛 `BubError(kind=NOT_FOUND)` |
+| `between_anchors(start, end)` | 两个 anchor 之间，不含边界；任一 anchor 不存在时抛 `NOT_FOUND` |
+| `between_dates(start, end)` | ISO 日期或时间范围，含边界；只有日期的上界覆盖整天 |
+| `kinds(*kinds)` | 条目类型 |
+| `query(value)` | 在 kind、日期、payload 和 meta 的 JSON 文本中做不区分大小写的包含匹配 |
+| `limit(value)` | 最多返回的条目数，在其他过滤之后应用 |
+
+`after_anchor` / `last_anchor` 返回指定或最近一个 anchor **之后**的条目，不包含边界 anchor 本身；anchor 不存在时抛出 `BubError(kind=NOT_FOUND)`。因此默认投影不会收到边界 anchor。使用 `anchor=None` 等不过滤 anchor 的读取方式时，选择器可能收到 anchor 条目，默认选择器会把它转换为 `[Anchor created: …]` 助手消息。直接使用 `TapeQuery` 时不叠加 `TapeContext` 的 `context=False` 过滤。
+
+### `InMemoryQueryMixin`
+
+```python
+class InMemoryQueryMixin:
+    def read(self, tape: str) -> list[TapeEntry] | None: ...
+    def fetch_all(self, query: TapeQuery) -> Iterable[TapeEntry]: ...
+```
+
+### `InMemoryTapeStore` {#builtin-stores}
+
+```python
+class InMemoryTapeStore(InMemoryQueryMixin):
+    def __init__(self) -> None: ...
+    def list_tapes(self) -> list[str]: ...
+    def reset(self, tape: str) -> None: ...
+    def read(self, tape: str) -> list[TapeEntry] | None: ...
+    def append(self, tape: str, entry: TapeEntry) -> None: ...
+```
+
+### `AsyncTapeStoreAdapter`
+
+```python
+class AsyncTapeStoreAdapter:
+    def __init__(self, store: TapeStore) -> None: ...
+    async def list_tapes(self) -> list[str]: ...
+    async def reset(self, tape: str) -> None: ...
+    async def fetch_all(self, query: TapeQuery) -> Iterable[TapeEntry]: ...
+    async def append(self, tape: str, entry: TapeEntry) -> None: ...
+```
+
+### `FileTapeStore`
+
+```python
+class FileTapeStore(InMemoryQueryMixin):
+    def __init__(self, directory: Path) -> None: ...
+    def list_tapes(self) -> list[str]: ...
+    def reset(self, tape: str) -> None: ...
+    def append(self, tape: str, entry: TapeEntry) -> None: ...
+    def read(self, tape: str) -> list[TapeEntry] | None: ...
+```
+
+### `is_async_tape_store`
+
+```python
+def is_async_tape_store(
+    store: TapeStore | AsyncTapeStore,
+) -> TypeIs[AsyncTapeStore]: ...
+```
+
+### `EventBus` {#events}
+
+```python
+class EventBus:
+    @overload
+    def on(self, event_type: type[E]) -> Callable[[EventHandler[E]], EventHandler[E]]: ...
+
+    @overload
+    def on(self, event_type: type[E], handler: EventHandler[E]) -> EventHandler[E]: ...
+
+    def off(self, event_type: type[E], handler: EventHandler[E]) -> None: ...
+    async def emit(self, event: E) -> E: ...
+```
+
+### `Event`
+
+```python
+class Event:
+    @property
+    def stopped(self) -> bool: ...
+```
+
+### 事件一览 {#event-reference}
+
+| 事件 | 触发时机 | 处理器可读取或修改的内容 |
+| --- | --- | --- |
+| `RunStarted` | 模型 Run 开始 | `model`、`prompt`、`metadata` |
+| `RunFinished` | Run 的流关闭 | `status`（`ok` / `error` / `cancelled`）、`steps`、耗时和错误 |
+| `StepStarted` | Step 开始 | `step`、可选的 `prompt` |
+| `StepFinished` | Step 结束 | 进度、用量；继续时设置 `next_prompt` |
+| `MessagesPending` | 构建请求时，或特定 Step 结束时 | 向 `messages` 追加用户内容 |
+| `LLMCallStarted` | 调用模型提供商之前 | 替换 `request`；设置 `LLMCallDecision.finish()` |
+| `LLMCallFinished` | 提供商调用成功或因普通异常失败 | `request` 和汇总后的 `result` |
+| `ToolCallStarted` | 工具执行之前 | 替换 `call`；设置 `deny` 或 `replace` |
+| `ToolCallFinished` | 工具成功、普通失败、被拒绝或被替换 | 给 `event.result.result` 赋值，替换面向模型的结果 |
+| `ChatFinished` | 当前 Step 的对话和工具往返可以记录时 | 消息、工具往返、用量和错误 |
+| `CommandFinished` | 直接命令成功或失败 | 命令、状态和输出 |
+
+`RunFinished` 在流关闭时发出。尚未迭代就关闭的 Run 以 `cancelled` 结束，Step 数为零。模型和工具的 Finished 事件不保证覆盖取消路径，因此计费和清理不能只依赖它们。
+
+`StepFinished.next_prompt` 提供下一个 Step 的用户消息，`MessagesPending.messages` 接收 Run 期间到达的消息。达到 `max_steps`（应用层由 `BUB_MAX_STEPS` 设置）时会抛出 `max_steps_reached` 错误。
+
+直接命令发出工具事件和 `CommandFinished`，但不发出 `RunStarted` 或 `RunFinished`。所有 Agent 事件都有 `state`，`TapeEvent` 子类还带有当前 `tape`。分发规则与决策语义见 [Agent 事件](/zh-cn/docs/concepts/events/#call-control)；应用 hooks 与这些事件的映射见 [Hooks 参考](/zh-cn/docs/reference/hooks/#event-mapping)。
+
+### `AgentEvent`
+
+```python
+@dataclass(kw_only=True)
+class AgentEvent(Event):
+    state: TurnState
+```
+
+### `TapeEvent`
+
+```python
+@dataclass(kw_only=True)
+class TapeEvent(AgentEvent):
+    tape: Tape
+```
+
+### `RunStarted`
+
+```python
+@dataclass(kw_only=True)
+class RunStarted(TapeEvent):
+    model: str
+    prompt: list[UserContent]
+    metadata: dict[str, Any] = field(default_factory=dict)
+```
+
+### `RunFinished`
+
+```python
+@dataclass(kw_only=True)
+class RunFinished(TapeEvent):
+    status: str
+    steps: int
+    elapsed_ms: int
+    error: str | None = None
+```
+
+### `StepStarted`
+
+```python
+@dataclass(kw_only=True)
+class StepStarted(TapeEvent):
+    step: int
+    prompt: list[UserContent] | None
+```
+
+### `StepFinished`
+
+```python
+@dataclass(kw_only=True)
+class StepFinished(TapeEvent):
+    step: int
+    status: str
+    elapsed_ms: int
+    error: str | None = None
+    prompt: list[UserContent] | None = None
+    stream: StreamState = field(default_factory=StreamState)
+    next_prompt: list[UserContent] | None = None
+```
+
+### `MessagesPending`
+
+```python
+@dataclass(kw_only=True)
+class MessagesPending(TapeEvent):
+    prompt: list[UserContent] | None
+    messages: list[list[UserContent]] = field(default_factory=list)
+```
+
+### `CommandFinished`
+
+```python
+@dataclass(kw_only=True)
+class CommandFinished(TapeEvent):
+    line: str
+    name: str
+    status: str
+    elapsed_ms: int
+    output: str
+```
+
+### `LLMCallStarted`
+
+```python
+@dataclass(kw_only=True)
+class LLMCallStarted(TapeEvent):
+    request: LLMCallRequest
+    decision: LLMCallDecision | None = None
+
+    @property
+    def stopped(self) -> bool: ...
+```
+
+### `LLMCallFinished`
+
+```python
+@dataclass(kw_only=True)
+class LLMCallFinished(TapeEvent):
+    request: LLMCallRequest
+    result: LLMCallResult
+```
+
+### `ToolCallStarted`
+
+```python
+@dataclass(kw_only=True)
+class ToolCallStarted(AgentEvent):
+    call: ToolCall
+    decision: ToolCallDecision = field(default_factory=lambda: ToolCallDecision.proceed())
+
+    @property
+    def stopped(self) -> bool: ...
+```
+
+### `ToolCallFinished`
+
+```python
+@dataclass(kw_only=True)
+class ToolCallFinished(AgentEvent):
+    call: ToolCall
+    result: ToolCallResult
+```
+
+### `ChatFinished`
+
+```python
+@dataclass(kw_only=True)
+class ChatFinished(TapeEvent):
+    run_id: str
+    model: str
+    system_prompt: str | None
+    new_messages: list[republic.Message]
+    response_text: str | None
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    tool_results: list[Any] | None = None
+    usage: dict[str, Any] | None = None
+    provider: str | None = None
+    assistant_fields: dict[str, Any] = field(default_factory=dict)
+    error: BubError | None = None
+    context_error: BubError | None = None
+```
+
+### `CodeTools`
+
+```python
+CodeTools = Iterable[Tool] | Callable[[TurnState], Iterable[Tool] | None]
+```
+
+### `ModelResolver`
+
+```python
+ModelResolver = Callable[[str | None, ToolContext], tuple[str, Mapping[str, Any]]]
+```
+
+### `CodeMode` {#code-mode}
+
+```python
+class CodeMode:
+    def __init__(
+        self,
+        tools: CodeTools = (),
+        *,
+        environment: Environment | Callable[[TurnState], Environment] | None = None,
+        models: str | ModelResolver | None = None,
+        stub_dir: Path | Callable[[TurnState], Path] | None = None,
+        media_tools: bool = True,
+        name: str = RUN_CODE_TOOL_NAME,
+    ) -> None: ...
+
+    def code_tools(self, state: TurnState) -> list[Tool] | None: ...
+    def environment(self, state: TurnState) -> Environment: ...
+    def prompt(self, context: PromptContext) -> str | None: ...
+```
+
+## `bub.prompt` {#prompt}
+
+### `UserContent`
+
+```python
+type UserContent = str | republic.Image | republic.Audio | republic.Video
+```
+
+### `LegacyPrompt`
+
+```python
+type LegacyPrompt = str | list[dict[str, Any]]
+```
+
+### `to_content`
+
+```python
+def to_content(prompt: list[UserContent] | LegacyPrompt) -> list[UserContent]: ...
+```
+
+### `to_legacy_prompt`
+
+```python
+def to_legacy_prompt(content: list[UserContent]) -> LegacyPrompt: ...
+```
+
+### `prompt_text`
+
+```python
+def prompt_text(content: list[UserContent]) -> str: ...
+```
+
+## `bub.streaming` {#streams}
+
+### `StreamState`
+
+```python
+@dataclass
+class StreamState:
+    error: BubError | None = None
+    usage: dict[str, Any] | None = None
+    system_prompt: str | None = None
+    tools: list[Tool] = field(default_factory=list)
+```
+
+### `StreamEvent`
+
+```python
+@dataclass(frozen=True)
+class StreamEvent:
+    kind: Literal["text", "reasoning", "tool_call", "tool_result", "usage", "error", "final"]
+    data: dict[str, Any]
+```
+
+### `AsyncStreamEvents`
+
+```python
+class AsyncStreamEvents:
+    def __init__(
+        self,
+        iterator: AsyncIterator[StreamEvent],
+        *,
+        state: StreamState | None = None,
+        on_close: Callable[[], Awaitable[None]] | None = None,
+        span: Span | None = None,
+    ) -> None: ...
+
+    def __aiter__(self) -> AsyncIterator[StreamEvent]: ...
+    async def __anext__(self) -> StreamEvent: ...
+    async def aclose(self) -> None: ...
+
+    @property
+    def error(self) -> BubError | None: ...
+
+    @property
+    def usage(self) -> dict[str, Any] | None: ...
+```
+
+## `bub.errors` {#errors}
+
+### `ErrorKind`
+
+```python
+class ErrorKind(StrEnum):
+    INVALID_INPUT = "invalid_input"
+    CONFIG = "config"
+    PROVIDER = "provider"
+    TOOL = "tool"
+    TEMPORARY = "temporary"
+    NOT_FOUND = "not_found"
+    UNKNOWN = "unknown"
+```
+
+### `BubError`
+
+```python
+@dataclass
+class BubError(Exception):
+    kind: ErrorKind
+    message: str
+    details: dict[str, Any] | None = None
+
+    def as_dict(self) -> dict[str, Any]: ...
+```
+
+## `bub.environment` {#environment}
+
+### `ENVIRONMENT_STATE_KEY`
+
+```python
+ENVIRONMENT_STATE_KEY = "_runtime_environment"
+```
+
+### `CallTool`
+
+```python
+CallTool = Callable[[str, dict[str, Any]], Awaitable[Any]]
+```
+
+### `CodeFailed` {#codefailed}
+
+```python
+class CodeFailed(Exception):
+    def __init__(self, error: str, traceback: str = "") -> None: ...
+```
+
+### `Process` {#process}
+
+```python
+class Process(abc.ABC):
+    @property
+    @abc.abstractmethod
+    def stdout(self) -> asyncio.StreamReader: ...
+
+    @property
+    @abc.abstractmethod
+    def stderr(self) -> asyncio.StreamReader: ...
+
+    @property
+    @abc.abstractmethod
+    def returncode(self) -> int | None: ...
+
+    @abc.abstractmethod
+    async def wait(self) -> int: ...
+
+    @abc.abstractmethod
+    async def write_stdin(self, data: bytes) -> None: ...
+
+    @abc.abstractmethod
+    def close_stdin(self) -> None: ...
+
+    @abc.abstractmethod
+    def signal(self, *, kill: bool) -> None: ...
+
+    def is_running(self) -> bool: ...
+```
+
+### `Environment`
+
+```python
+class Environment(abc.ABC):
+    workspace: str | None = None
+    python: str = "python3"
+
+    @abc.abstractmethod
+    async def spawn(
+        self,
+        command: str | Sequence[str],
+        *,
+        cwd: str | None = None,
+        env: Mapping[str, str] | None = None,
+    ) -> Process: ...
+
+    @abc.abstractmethod
+    async def read_text(self, path: str) -> str: ...
+    async def read_bytes(self, path: str) -> bytes: ...
+
+    @abc.abstractmethod
+    async def write_text(self, path: str, content: str) -> None: ...
+
+    def resolve_path(self, path: str) -> str: ...
+
+    @abc.abstractmethod
+    async def run_code(
+        self,
+        code: str,
+        *,
+        tools: Sequence[str],
+        call_tool: CallTool,
+        write: Callable[[str], None],
+    ) -> None: ...
+
+    async def close(self) -> None: ...
+```
+
+### `LocalEnvironment`
+
+```python
+class LocalEnvironment(Environment):
+    def __init__(self, workspace: str | Path | None = None) -> None: ...
+
+    async def spawn(
+        self,
+        command: str | Sequence[str],
+        *,
+        cwd: str | None = None,
+        env: Mapping[str, str] | None = None,
+    ) -> LocalProcess: ...
+
+    async def read_text(self, path: str) -> str: ...
+    async def read_bytes(self, path: str) -> bytes: ...
+    async def write_text(self, path: str, content: str) -> None: ...
+
+    async def run_code(
+        self,
+        code: str,
+        *,
+        tools: Sequence[str],
+        call_tool: CallTool,
+        write: Callable[[str], None],
+    ) -> None: ...
+
+    def resolve_path(self, path: str) -> str: ...
+```
+
+## `bub` {#application}
+
+### `BubFramework` {#framework}
+
+```python
+class BubFramework:
+    def __init__(self, config_file: Path = DEFAULT_CONFIG_FILE) -> None: ...
+
+    @property
+    def plugin_manager(self) -> pluggy.PluginManager: ...
+
+    def load_builtin_hooks(self) -> None: ...
+    def load_hooks(self) -> None: ...
+    def create_cli_app(self) -> typer.Typer: ...
+
+    async def build_prompt(
+        self,
+        message: Envelope,
+        session_id: str,
+        state: dict[str, Any],
+    ) -> list[UserContent]: ...
+
+    async def continue_prompt(
+        self,
+        prompt: list[UserContent] | None,
+        tape: Tape,
+        state: StreamState,
+    ) -> str | None: ...
+
+    async def build_state(self, message: Envelope, session_id: str) -> TurnState: ...
+    async def process_inbound(self, inbound: Envelope, stream_output: bool = False) -> TurnResult: ...
+    async def resolve_session(self, message: Envelope) -> str: ...
+    def plugin_report(self) -> dict[str, PluginStatus]: ...
+    def hook_report(self) -> dict[str, list[str]]: ...
+    def bind_channel_router(self, router: ChannelRouter | None) -> None: ...
+    async def dispatch_via_channel_router(self, message: Envelope) -> bool: ...
+    async def quit_via_channel_router(self, session_id: str) -> None: ...
+
+    async def admit_message(
+        self,
+        *,
+        session_id: str,
+        message: Envelope,
+        turn: TurnSnapshot,
+    ) -> AdmitDecision | None: ...
+
+    async def get_model_options(
+        self,
+        *,
+        session_id: str,
+        workspace: str | Path | None = None,
+    ) -> ModelOptions: ...
+
+    async def steer_message(
+        self,
+        *,
+        message: Envelope,
+        session_id: str,
+        state: TurnState,
+        reason: str | None = None,
+    ) -> bool: ...
+
+    def get_channels(self, message_handler: MessageHandler) -> dict[str, Channel]: ...
+
+    @asynccontextmanager
+    async def running(self) -> AsyncGenerator[contextlib.AsyncExitStack, None]: ...
+
+    async def get_environment(self, session_id: str) -> Environment | None: ...
+    def get_tape_store(self) -> TapeStore | AsyncTapeStore | None: ...
+    def get_tape_sidecars(self) -> tuple[TapeSidecar, ...]: ...
+    def get_tools(self) -> tuple[Tool, ...]: ...
+    def get_steering_inbox(self) -> SteeringInbox | None: ...
+    def get_agent_hooks(self) -> PluginAgentHooks: ...
+    def get_system_prompt(self, prompt: list[UserContent], state: dict[str, Any]) -> str: ...
+    def build_tape_context(self) -> TapeContext: ...
+    def collect_onboard_config(self, plugin_name: str | None = None) -> dict[str, Any]: ...
+```
+
+## `bub.builtin.agent`
+
+### `BubAgent`
+
+```python
+class BubAgent(core.Agent):
+    command_prefix: str
+
+    def __init__(
+        self,
+        framework: BubFramework,
+        *,
+        tools: Collection[Tool] | None = None,
+        tape_store: TapeStore | AsyncTapeStore | None = None,
+        skill_dirs: Collection[Path] | None = None,
+        command_prefix: str | None = None,
+    ) -> None: ...
+
+    async def run_stream(
+        self,
+        *,
+        session_id: str,
+        prompt: list[UserContent] | LegacyPrompt,
+        state: TurnState | None = None,
+        model: str | None = None,
+        allowed_skills: Collection[str] | None = None,
+        allowed_tools: Collection[str] | None = None,
+        reasoning_effort: str | None = None,
+    ) -> AsyncStreamEvents: ...
+
+    async def prepare_tools(
+        self,
+        tape: Tape,
+        prompt: list[UserContent] | None,
+    ) -> list[Tool]: ...
+```
+
+## `bub.envelope` {#messages}
+
+### `Envelope`
+
+```python
+type Envelope = Any
+```
+
+### `field_of`
+
+```python
+def field_of(message: Envelope, key: str, default: Any = None) -> Any: ...
+```
+
+### `content_of`
+
+```python
+def content_of(message: Envelope) -> str: ...
+```
+
+### `normalize_envelope`
+
+```python
+def normalize_envelope(message: Envelope) -> dict[str, Any]: ...
+```
+
+### `unpack_batch`
+
+```python
+def unpack_batch(batch: Any) -> list[Envelope]: ...
+```
+
+## `bub.turn`
+
+### `TurnState`
+
+```python
+type TurnState = dict[str, Any]
+```
+
+### `TurnResult`
+
+```python
+@dataclass(frozen=True)
+class TurnResult:
+    session_id: str
+    prompt: list[UserContent]
+    model_output: str
+    outbounds: list[Envelope] = field(default_factory=list)
+    state: TurnState = field(default_factory=dict)
+```
+
+## `bub.model_selection` {#model-options}
+
+### `ModelChoice`
+
+```python
+@dataclass(frozen=True)
+class ModelChoice:
+    id: str
+    name: str | None = None
+    description: str | None = None
+    meta: dict[str, Any] | None = None
+```
+
+### `ModelOptions`
+
+```python
+@dataclass(frozen=True)
+class ModelOptions:
+    models: list[ModelChoice] = field(default_factory=list)
+    current_model: str | None = None
+```
+
+## `bub.channels` {#channels}
+
+### `MediaType`
+
+```python
+type MediaType = Literal["image", "audio", "video", "document"]
+```
+
+### `MessageKind`
+
+```python
+type MessageKind = Literal["error", "normal", "command"]
+```
+
+### `MediaItem`
+
+```python
+@dataclass
+class MediaItem:
+    type: MediaType
+    mime_type: str
+    filename: str | None = None
+    url: str | None = None
+    data_fetcher: Callable[[], Awaitable[bytes | None]] | None = None
+
+    async def get_url(self) -> str | None: ...
+```
+
+### `ChannelMessage`
+
+```python
+@dataclass
+class ChannelMessage:
+    session_id: str
+    channel: str
+    content: str
+    chat_id: str = "default"
+    is_active: bool = False
+    kind: MessageKind = "normal"
+    context: dict[str, Any] = field(default_factory=dict)
+    media: list[MediaItem] = field(default_factory=list)
+    lifespan: contextlib.AbstractAsyncContextManager | None = None
+    output_channel: str = ""
+
+    @property
+    def context_str(self) -> str: ...
+
+    @classmethod
+    def from_batch(cls, batch: list[ChannelMessage]) -> ChannelMessage: ...
+```
+
+### `Channel`
+
+```python
+class Channel(ABC):
+    name: ClassVar[str] = "base"
+
+    @abstractmethod
+    async def start(self, stop_event: asyncio.Event) -> None: ...
+
+    @abstractmethod
+    async def stop(self) -> None: ...
+
+    @property
+    def needs_debounce(self) -> bool: ...
+
+    @property
+    def enabled(self) -> bool: ...
+
+    async def send(self, message: ChannelMessage) -> None: ...
+
+    def stream_events(
+        self,
+        message: ChannelMessage,
+        stream: AsyncIterable[StreamEvent],
+    ) -> AsyncIterable[StreamEvent]: ...
+
+    async def admit_message(
+        self,
+        session_id: str,
+        message: Envelope,
+        turn: TurnSnapshot,
+    ) -> AdmitDecision | None: ...
+```
+
+### `Interface`
+
+```python
+class Interface(Channel): ...
+```
+
+### `Lifecycle`
+
+```python
+class Lifecycle(Channel): ...
+```
+
+### `MessageHandler`
+
+```python
+type MessageHandler = Callable[[Envelope], Coroutine[Any, Any, None]]
+```
+
+### `ChannelRouter`
+
+```python
+class ChannelRouter(Protocol):
+    async def dispatch_output(self, message: Envelope) -> bool: ...
+
+    def wrap_stream(
+        self,
+        message: Envelope,
+        stream: AsyncIterable[StreamEvent],
+    ) -> AsyncIterable[StreamEvent]: ...
+
+    async def quit(self, session_id: str) -> None: ...
+
+    async def admit_channel_message(
+        self,
+        session_id: str,
+        message: Envelope,
+        turn: TurnSnapshot,
+    ) -> AdmitDecision | None: ...
+```
+
+### `ChannelManager`
+
+```python
+class ChannelManager:
+    def __init__(
+        self,
+        framework: BubFramework,
+        enabled_channels: Collection[str] | None = None,
+        stream_output: bool | None = None,
+        system_prompt: str | None = CHANNEL_SYSTEM_PROMPT,
+    ) -> None: ...
+
+    async def on_receive(self, message: ChannelMessage) -> None: ...
+    def get_channel(self, name: str) -> Channel | None: ...
+    async def dispatch_output(self, message: Envelope) -> bool: ...
+
+    def wrap_stream(
+        self,
+        message: Envelope,
+        stream: AsyncIterable[StreamEvent],
+    ) -> AsyncIterable[StreamEvent]: ...
+
+    async def quit(self, session_id: str) -> None: ...
+    def enabled_channels(self) -> list[Channel]: ...
+    async def listen_and_run(self) -> None: ...
+    async def shutdown(self) -> None: ...
+
+    async def admit_channel_message(
+        self,
+        session_id: str,
+        message: Envelope,
+        turn: TurnSnapshot,
+    ) -> AdmitDecision | None: ...
+```
+
+### `TurnAdmissionAction`
+
+```python
+type TurnAdmissionAction = Literal["process", "drop", "follow_up", "steer"]
+```
+
+### `AdmitDecision`
+
+```python
+@dataclass(frozen=True)
+class AdmitDecision:
+    action: TurnAdmissionAction
+    reason: str | None = None
+```
+
+### `TurnSnapshot`
+
+```python
+@dataclass(frozen=True)
+class TurnSnapshot:
+    session_id: str
+    is_running: bool
+    running_count: int
+    pending_count: int
+    steering_count: int = 0
+```
+
+### `SteeringInbox`
+
+```python
+class SteeringInbox(Protocol):
+    async def enqueue_message(self, message: Envelope, state: TurnState) -> None: ...
+    async def drain_messages(self, state: TurnState) -> list[Envelope]: ...
+    def message_count(self, state: TurnState) -> int: ...
+```
+
+## `bub.application` {#application-events}
+
+### `Outcome`
+
+```python
+type Outcome = Literal["succeeded", "failed", "cancelled"]
+```
+
+### `PromptKind`
+
+```python
+type PromptKind = Literal["question", "permission", "auth"]
+```
+
+### `CommandChanged`
+
+```python
+@dataclass(frozen=True)
+class CommandChanged(Event):
+    outcome: Outcome | None = None
+```
+
+### `WorkChanged`
+
+```python
+@dataclass(frozen=True)
+class WorkChanged(Event):
+    busy: bool
+    completed: Outcome | None = None
+```
+
+### `PromptChanged`
+
+```python
+@dataclass(frozen=True)
+class PromptChanged(Event):
+    kind: PromptKind | None
+```
+
+## `bub.program_status`
+
+### `ProgramStatus`
+
+```python
+class ProgramStatus:
+    def __init__(self, output: TextIO | None) -> None: ...
+    def __call__(self, event: Event) -> None: ...
+```
+
+## `bub.inquirer` {#inquirer}
+
+### `CheckboxValidator`
+
+```python
+CheckboxValidator = Callable[[list[str]], bool | str]
+```
+
+### `ask_prompt`
+
+```python
+def ask_prompt(
+    prompt: Callable[..., InquirerResult[Any]],
+    message: str,
+    *,
+    kind: PromptKind = "question",
+    **kwargs: Any,
+) -> Any: ...
+```
+
+### `ask_text`
+
+```python
+def ask_text(message: str, default: str = "") -> str: ...
+```
+
+### `ask_secret`
+
+```python
+def ask_secret(message: str) -> str: ...
+```
+
+### `ask_confirm`
+
+```python
+def ask_confirm(
+    message: str,
+    default: bool = False,
+    *,
+    kind: PromptKind = "question",
+) -> bool: ...
+```
+
+### `ask_select`
+
+```python
+def ask_select(message: str, choices: list[str], default: str = "") -> str: ...
+```
+
+### `ask_fuzzy`
+
+```python
+def ask_fuzzy(
+    message: str,
+    choices: list[str],
+    default: str | None = None,
+) -> str: ...
+```
+
+### `ask_checkbox`
+
+```python
+def ask_checkbox(
+    message: str,
+    choices: list[str],
+    enabled: list[str] | None = None,
+    validate: CheckboxValidator | None = None,
+) -> list[str]: ...
+```

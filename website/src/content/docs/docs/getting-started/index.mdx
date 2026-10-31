@@ -1,26 +1,54 @@
 ---
-title: Build your Bub
-description: Put an agent in your own Python program, or customize the Bub application.
-sidebar:
-  order: 0
+title: What is Bub?
+description: A lightweight agent runtime written in Python. Run it as-is, or embed it in your own program.
 ---
+import { Card, CardGrid } from '@astrojs/starlight/components';
 
-Put an agent in your own Python program, or start with the Bub application and customize it. The application uses the same agent kernel and adds configuration, plugins, and channel integration.
+Bub is a lightweight agent runtime written in Python. It ships with a ready-to-use CLI app and a composable SDK, so you can run it directly or embed agent capabilities in your own programs.
 
-## Build your own agent
+An agent is at heart a loop: the model reads the context and decides which tool to call, the tool result goes back into the context, and the model reads it again. The loop ends when the model stops asking for tools and answers directly.
 
-Choose a model and tools, assemble an agent with `bub.core.Agent`, and connect it to your program. Start by defining a tool that looks up an order, then let the agent call it.
+So an agent rests on four things: a **model**, **tools**, a **context**, and the **loop** that drives them. Working from that shared understanding, Bub keeps a small core and builds a ready-to-run application around it:
 
-[Build your own agent](/docs/build/sdk/) takes you through the Python example. When you need an HTTP endpoint, continue with [FastAPI](/docs/tutorials/fastapi/).
+<CardGrid>
+  <Card title="The core layer" icon="puzzle">
+    Composable agent capabilities, including the loop, tools, context, the event bus, and the model client.
+  </Card>
+  <Card title="The app layer" icon="rocket">
+    A harness on top of the core that provides configuration, plugins, hooks, skills, message channels, and a gateway.
+  </Card>
+</CardGrid>
 
-## Customize the Bub app
+Which one should you use?
 
-Run Bub, then use configuration and plugins to add the behavior you need. This route also covers skills, channels, and deployment.
+- If you want to **combine Bub with your existing codebase or service**, use the core layer [SDK](/docs/sdk/) directly;
+- If you want **Bub to work out of the box**, use the app layer [App](/docs/app/workspace/).
 
-[Run your first conversation](/docs/getting-started/first-turn/) gets the app running. [Customize the Bub app](/docs/build/) helps you choose what to extend next.
+:::tip
+The two are not exclusive. When you need to, you can even [reuse the Bub app inside the SDK](/docs/integrations/reuse-app/#model-stage).
+:::
 
-## Read the common explanations as you need them
+## Features {#features}
 
-Tools, conversation history, and events share one set of [explanations](/docs/concepts/). Each route gives you its own setup steps and default behavior.
+Bub is built around simplicity, composability, and extensibility. You can combine its capabilities as needed or build your own agent on top of it. Its key features include:
 
-[Install Bub](/docs/getting-started/install/) for your chosen route, then run its first example.
+<CardGrid>
+  <Card title="Append-only context" icon="database">
+    Conversation history is appended to the [tape](/docs/concepts/tape/) without modifying existing entries.
+  </Card>
+  <Card title="Event-driven" icon="analytics">
+    Every model and tool call emits events when it starts, finishes, and returns a result, so you can observe, modify, or intervene in the run.
+  </Card>
+  <Card title="Tools are functions" icon="code-branch">
+    Write tools as ordinary Python functions and take advantage of the existing Python ecosystem.
+  </Card>
+  <Card title="Pluggable" icon="setting">
+    Capabilities can be extended through plugins. A plugin can provide a tool, an event listener, a message channel, or a complete set of skills.
+  </Card>
+</CardGrid>
+
+:::tip
+Explore the [Agent loop](/docs/concepts/agent/) to understand Bub's core execution model.
+:::
+
+Now you can explore the Bub docs freely, or follow the next page and start your own journey with Bub.

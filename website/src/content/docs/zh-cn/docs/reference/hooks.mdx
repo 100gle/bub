@@ -1,107 +1,382 @@
 ---
-title: 应用 Hooks
-description: Bub 插件的 hook 签名、调用规则和资源生命周期。
+title: Hooks
+description: Turn、App、Agent Hooks 及相关类型的签名。
 ---
 
-Hooks 把插件接到 Bub 应用上。本页列出 `BubHookSpecs` 声明的 26 个 hooks。用法示例见[改变应用行为](/zh-cn/docs/build/hooks/)，应用阶段顺序见[应用的一轮处理](/zh-cn/docs/concepts/turn-pipeline/)。
+## Turn Hooks {#turn-hooks}
 
-下文的“首个”指按 hook 优先级取得第一个非 `None` 的结果，“全部”指调用每个实现。普通 hook 抛出异常时，本次分发停止，异常向上传播；[agent 拦截 hooks](#agent-loop-hooks-pluginagenthooks) 和 `on_error` 有各自的异常处理规则。
+### `resolve_session` {#resolve_session}
 
-## 轮次 Hooks
+```python
+def resolve_session(self, message: Envelope) -> str:
+```
 
-| Hook | 签名 | 行为 |
+### `load_state` {#load_state}
+
+```python
+def load_state(self, message: Envelope, session_id: str) -> TurnState:
+```
+
+### `build_prompt` {#build_prompt}
+
+```python
+def build_prompt(self, message: Envelope, session_id: str, state: TurnState) -> list[UserContent] | LegacyPrompt:
+```
+
+### `run_model` {#run_model}
+
+```python
+def run_model(self, prompt: str | list[dict], session_id: str, state: TurnState) -> str:
+```
+
+### `run_model_stream` {#run_model_stream}
+
+```python
+def run_model_stream(self, prompt: str | list[dict], session_id: str, state: TurnState) -> AsyncStreamEvents:
+```
+
+### `continue_prompt` {#continue_prompt}
+
+```python
+def continue_prompt(self, prompt: str | list[dict] | None, tape: Tape, state: StreamState) -> str | None:
+```
+
+### `save_state` {#save_state}
+
+```python
+def save_state(
+    self,
+    session_id: str,
+    state: TurnState,
+    message: Envelope,
+    model_output: str,
+) -> None:
+```
+
+### `render_outbound` {#render_outbound}
+
+```python
+def render_outbound(
+    self,
+    message: Envelope,
+    session_id: str,
+    state: TurnState,
+    model_output: str,
+) -> list[Envelope]:
+```
+
+### `dispatch_outbound` {#dispatch_outbound}
+
+```python
+def dispatch_outbound(self, message: Envelope) -> bool:
+```
+
+## App Hooks {#application-hooks}
+
+### `register_cli_commands` {#register_cli_commands}
+
+```python
+def register_cli_commands(self, app: Any) -> None:
+```
+
+### `onboard_config` {#onboard_config}
+
+```python
+def onboard_config(self, current_config: dict[str, Any]) -> dict[str, Any] | None:
+```
+
+### `provide_model_options` {#provide_model_options}
+
+```python
+def provide_model_options(
+    self,
+    session_id: str,
+    workspace: Path | None,
+) -> ModelOptions | None:
+```
+
+### `provide_environment` {#provide_environment}
+
+```python
+def provide_environment(self, session_id: str, workspace: Path) -> Environment | None:
+```
+
+### `on_error` {#on_error}
+
+```python
+def on_error(self, stage: str, error: Exception, message: Envelope | None) -> None:
+```
+
+### `system_prompt` {#system_prompt}
+
+```python
+def system_prompt(self, prompt: str | list[dict], state: TurnState) -> str:
+```
+
+### `provide_tape_store` {#provide_tape_store}
+
+```python
+def provide_tape_store(self) -> TapeStore | AsyncTapeStore | None:
+```
+
+### `provide_lifespan` {#provide_lifespan}
+
+```python
+def provide_lifespan(self) -> AsyncIterator[None] | Iterator[None] | None:
+```
+
+### `provide_tape_sidecar` {#provide_tape_sidecar}
+
+```python
+def provide_tape_sidecar(self) -> TapeSidecar:
+```
+
+### `provide_channels` {#provide_channels}
+
+```python
+def provide_channels(self, message_handler: MessageHandler) -> list[Channel]:
+```
+
+### `build_tape_context` {#build_tape_context}
+
+```python
+def build_tape_context(self) -> TapeContext:
+```
+
+### `admit_message` {#admit_message}
+
+```python
+def admit_message(
+    self,
+    session_id: str,
+    message: Envelope,
+    turn: TurnSnapshot,
+) -> AdmitDecision | None:
+```
+
+### `provide_steering_inbox` {#provide_steering_inbox}
+
+```python
+def provide_steering_inbox(self) -> SteeringInbox | None:
+```
+
+### `provide_tools` {#provide_tools}
+
+```python
+def provide_tools(self) -> list[Tool]:
+```
+
+## Agent Hooks {#interception-through-pluginagenthooks}
+
+### `before_llm_call` {#before_llm_call}
+
+```python
+def before_llm_call(self, request: LLMCallRequest, state: TurnState) -> LLMCallRequest | LLMCallDecision | None:
+```
+
+### `LLMCallStarted.request` {#llmcallrequest}
+
+```python
+@dataclass(frozen=True)
+class LLMCallRequest:
+    run_id: str
+    model: str
+    messages: list[republic.Message]
+    tool_names: tuple[str, ...] = ()
+    max_tokens: int | None = None
+```
+
+### `LLMCallStarted.decision` {#llmcalldecision}
+
+```python
+@dataclass(frozen=True)
+class LLMCallDecision:
+    action: Literal["finish"] = "finish"
+    text: str = ""
+
+    @classmethod
+    def finish(cls, text: str) -> LLMCallDecision: ...
+```
+
+### `after_llm_call` {#after_llm_call}
+
+```python
+def after_llm_call(self, request: LLMCallRequest, result: LLMCallResult, state: TurnState) -> None:
+```
+
+### `LLMCallFinished.result` {#llmcallresult}
+
+```python
+@dataclass(frozen=True)
+class LLMCallResult:
+    run_id: str
+    text: str | None = None
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    usage: dict[str, Any] | None = None
+    error: Exception | None = None
+    duration_ms: int = 0
+```
+
+### `before_tool_call` {#before_tool_call}
+
+```python
+def before_tool_call(self, call: ToolCall, state: TurnState) -> ToolCallDecision | None:
+```
+
+### `ToolCallStarted.call` {#toolcall}
+
+```python
+@dataclass(frozen=True)
+class ToolCall:
+    run_id: str
+    tool: str
+    arguments: dict[str, Any]
+    context: ToolContext | None = field(default=None, repr=False, compare=False)
+```
+
+### `ToolCallStarted.decision` {#toolcalldecision}
+
+```python
+@dataclass(frozen=True)
+class ToolCallDecision:
+    action: Literal["proceed", "replace", "deny"] = "proceed"
+    arguments: dict[str, Any] | None = None
+    result: Any = None
+    message: str | None = None
+
+    @classmethod
+    def proceed(cls, arguments: dict[str, Any] | None = None) -> ToolCallDecision: ...
+
+    @classmethod
+    def replace(cls, result: Any) -> ToolCallDecision: ...
+
+    @classmethod
+    def deny(cls, message: str) -> ToolCallDecision: ...
+```
+
+### `after_tool_call` {#after_tool_call}
+
+```python
+def after_tool_call(self, call: ToolCall, result: ToolCallResult, state: TurnState) -> None:
+```
+
+### `ToolCallFinished.result` {#toolcallresult}
+
+```python
+@dataclass
+class ToolCallResult:
+    run_id: str
+    tool: str
+    arguments: dict[str, Any]
+    result: Any = None
+    error: Exception | None = None
+    duration_ms: int = 0
+```
+
+## App Hooks 与 Agent 事件 {#app-hooks}
+
+概念页只说明「谁在什么方向介入」，这里给出适配细节。三种数据的关系与决策语义见 [Agent 事件](/zh-cn/docs/concepts/events/#three-kinds)。
+
+### 事件映射 {#event-mapping}
+
+`PluginAgentHooks` 把应用 hooks 接到 Agent 事件上：
+
+| 应用 hook | Agent 事件 | 说明 |
 | --- | --- | --- |
-| `resolve_session` | `(message: Envelope) -> str` | 取首个结果；falsy 结果回退到 framework 按渠道和聊天标识构造的会话 ID。 |
-| `load_state` | `(message: Envelope, session_id: str) -> TurnState` | 收集全部状态片段；先合并低优先级片段，让高优先级值覆盖。 |
-| `build_prompt` | `(message: Envelope, session_id: str, state: TurnState) -> list[UserContent] \| LegacyPrompt` | 取首个结果；选中 falsy 值时回退到入站内容，不再尝试其他实现。 |
-| `run_model` | `(prompt, session_id, state) -> str` | 提供模型阶段的文本结果；与 `run_model_stream` 二选一实现。 |
-| `run_model_stream` | `(prompt, session_id, state) -> AsyncStreamEvents` | 提供模型阶段的流；与 `run_model` 二选一实现。 |
-| `continue_prompt` | `(prompt: LegacyPrompt \| None, tape: Tape, state: StreamState) -> str \| None` | 取首个结果；由 `AgentPlugins` 在 status 为 `continue` 的 `StepFinished` 上调用，返回字符串时添加用户消息。 |
-| `save_state` | `(session_id, state, message, model_output) -> None` | 在模型阶段的 `finally` 中调用全部实现；此前会话、状态或提示词准备失败时不会调用。 |
-| `render_outbound` | `(message, session_id, state, model_output) -> list[Envelope]` | 收集并拼接消息批次；合并结果为空时使用 framework 的默认出站消息。 |
-| `dispatch_outbound` | `(message: Envelope) -> bool` | 针对每条出站消息调用全部实现。 |
+| `before_llm_call` | `LLMCallStarted` | 每次模型调用前；可返回改写后的 `LLMCallRequest` 或 `LLMCallDecision` |
+| `after_llm_call` | `LLMCallFinished` | 调用成功或普通异常失败后各一次 |
+| `before_tool_call` | `ToolCallStarted` | 每次工具调用前；可 `proceed(arguments)`、`replace(result)` 或 `deny(message)` |
+| `after_tool_call` | `ToolCallFinished` | 成功、失败、拒绝与替代都会触发 |
+| `continue_prompt` | `StepFinished` | 仅在 `status == "continue"` 时调用，结果写入 `next_prompt` |
+| `provide_steering_inbox` | `MessagesPending` | 排出待注入的 steering 消息，加入当前 Run 的下一步 |
 
-这些 hooks 可以同步或异步实现。`continue_prompt` 接收 `StreamState`；表中其他 `state` 参数是可变的 `TurnState` 字典。
+模型可见的工具调用（包括 `.tape.handoff` 这类内置工具）同样经过 `ToolCallStarted` / `ToolCallFinished`。
 
-模型适配器先按插件注册顺序的逆序选择文本或流式 hook，再按 hook 优先级分发选中的名称。它可以把流收集为文本，也可以把文本回复包装成流。每个插件选择一种模型 hook 实现。
+### 两种接入方式的差异 {#event-vs-hooks}
 
-## 应用资源与配置
-
-| Hook | 签名 | 行为 |
+| 对比项 | 直接处理 Agent 事件 | 应用拦截 hook |
 | --- | --- | --- |
-| `register_cli_commands` | `(app: typer.Typer) -> None` | 创建 CLI 时同步调用全部实现。 |
-| `onboard_config` | `(current_config: dict) -> dict \| None` | 同步调用，将每个返回片段合入累计配置；非 dict 返回值抛出 `TypeError`。 |
-| `provide_model_options` | `(session_id: str, workspace: Path \| None) -> ModelOptions \| None` | 按优先级收集模型选项，可异步实现；调用方负责选择和持久化。 |
-| `provide_environment` | `(session_id: str, workspace: Path) -> Environment \| None` | 取首个结果，可异步实现；每个会话缓存一个环境，在退出 `running()` 时关闭。 |
-| `system_prompt` | `(prompt, state: TurnState) -> str` | 同步调用，按 hook 优先级的逆序用空行拼接 truthy 片段。 |
-| `provide_tape_store` | `() -> TapeStore \| AsyncTapeStore \| None` | 进入 `running()` 时同步取得首个结果；可以用生成器 yield 当前 store。 |
-| `provide_lifespan` | `() -> Iterator[None] \| AsyncIterator[None] \| None` | 收集资源生命周期，在每个 `running()` 作用域中分别进入一次。 |
-| `provide_tape_sidecar` | `() -> TapeSidecar` | 同步收集 sidecars，同名时保留优先级顺序中的首个结果。 |
-| `provide_channels` | `(message_handler: MessageHandler) -> list[Channel]` | 同步收集渠道，按 `Channel.name` 去重，保留优先级顺序中的首个结果。 |
-| `build_tape_context` | `() -> TapeContext` | 取首个同步结果，选择应用 agent 的上下文策略。 |
-| `admit_message` | `(session_id, message, turn: TurnSnapshot) -> AdmitDecision \| None` | 渠道调度前取首个结果，可异步实现；`None` 保留渠道默认的并发调度。 |
-| `provide_tools` | `() -> list[Tool]` | 同步收集工具，同名时保留优先级顺序中的首个结果。 |
-| `provide_steering_inbox` | `() -> SteeringInbox \| None` | 进入 `running()` 时同步取得首个结果；可以用生成器 yield inbox。 |
-| `on_error` | `(stage: str, error: Exception, message: Envelope \| None) -> None` | 通知全部观察者；观察者异常被记录并跳过。异步实现只在异步通知路径上生效。 |
+| 注册 | `agent.events.on(Type, handler)` | 插件中的 `@hookimpl` |
+| 执行顺序 | 注册顺序 | pluggy 优先级 |
+| 参数修改 | 原地替换 `event.call` / `event.request` | 返回 `ToolCallDecision.proceed(arguments=...)` 或新的 `LLMCallRequest` |
+| 控制 | 设置 `event.decision` | 返回 decision 对象 |
+| 异常 | 传播给 `emit()` 调用方，可能使 Run 失败 | 记录日志后跳过，不会中断 Run |
+| 返回值类型不符 | 不适用 | 记录警告并跳过该实现 |
 
-同步分发跳过 awaitable 返回值，并记录 `hook.async_not_supported` 告警。资源 provider 可以返回同步或异步生成器，Bub 会把它们作为上下文管理器进入。
+因此用 hook 实现的安全策略不能靠抛异常阻止调用，必须返回 `deny(...)`。
 
-## Agent 拦截 Hooks
+### 订阅方式 {#subscribe}
 
-| Hook | 签名 | 行为 |
-| --- | --- | --- |
-| `before_llm_call` | `(request: LLMCallRequest, state: TurnState) -> LLMCallRequest \| LLMCallDecision \| None` | 链式更新请求；finish decision 跳过供应商调用并终止调用链。 |
-| `after_llm_call` | `(request: LLMCallRequest, result: LLMCallResult, state: TurnState) -> None` | 观察完成的供应商调用或普通异常失败。 |
-| `before_tool_call` | `(call: ToolCall, state: TurnState) -> ToolCallDecision \| None` | 链式更新参数；replace 或 deny 终止调用链。 |
-| `after_tool_call` | `(call: ToolCall, result: ToolCallResult, state: TurnState) -> None` | 处理工具成功、失败、替换或拒绝；给 `result.result` 赋值可以改变结果。 |
+`PluginAgentHooks(runtime).subscribe(events)` 把四个拦截 hook 接到已有或新建的事件总线上；`AgentPlugins.attach(agent)` 会自动订阅，同时接上 `continue_prompt`、steering inbox 与系统提示词。嵌入方式与生命周期要求见[复用 Bub 应用](/zh-cn/docs/integrations/reuse-app/#agent-loop-hooks)。
 
-<span id="how-hooks-are-invoked"></span>
+## PluginAgentHooks {#pluginagenthooks}
 
-<a id="iteration-order"></a>
+```python
+class PluginAgentHooks:
+    def __init__(self, runtime: HookRuntime) -> None: ...
 
-## 优先级与分发
+    def subscribe(self, events: EventBus | None = None) -> EventBus: ...
 
-Bub 先注册内置 hooks，再注册已安装插件的入口点。普通实现优先级相同时，后注册的先运行。`@hookimpl(tryfirst=True)` 和 `@hookimpl(trylast=True)` 会改变优先级。这些标记与注册顺序共同决定哪个实现先运行。
+    async def before_llm_call(
+        self,
+        request: LLMCallRequest,
+        state: TurnState,
+    ) -> tuple[LLMCallRequest, LLMCallDecision | None]: ...
 
-`HookRuntime` 按 pluggy 的 `get_hookimpls()` 列表逆序，直接调用普通 hook 实现。这条分发路径不支持 pluggy 的 wrapper 标记（`wrapper=True` 和 `hookwrapper=True`）。
+    async def after_llm_call(
+        self,
+        request: LLMCallRequest,
+        result: LLMCallResult,
+        state: TurnState,
+    ) -> None: ...
 
-`call_first` 遇到第一个非 `None` 值就停止，`call_many` 收集所有实现的值。它们的同步版本会跳过 awaitables。每个实现只收到自己声明的参数。
+    async def before_tool_call(
+        self,
+        call: ToolCall,
+        state: TurnState,
+    ) -> tuple[ToolCall, ToolCallDecision]: ...
 
-`bub hooks` 按 pluggy 内部保存的顺序显示绑定，用于确认注册结果。执行时遵循上面的优先级规则。
+    async def after_tool_call(
+        self,
+        call: ToolCall,
+        result: ToolCallResult,
+        state: TurnState,
+    ) -> None: ...
+```
 
-<a id="prompt-content"></a>
+## AgentPlugins {#agentplugins}
 
-## 提示词内容
+### `AgentComponents` {#agentcomponents}
 
-`build_prompt` 可以返回包含字符串和 Republic 媒体的列表，媒体类型包括 `republic.Image`、`Audio` 和 `Video`。使用 `republic.image(...)`、`republic.audio(...)`、`republic.video(...)` 构造媒体。
+```python
+class AgentComponents(TypedDict, total=False):
+    store: TapeStore | AsyncTapeStore
+    context: TapeContext
+    sidecars: Sequence[TapeSidecar]
+```
 
-旧格式的字符串和内容块字典仍可使用。接收提示词的 hooks（`run_model`、`run_model_stream`、`continue_prompt`、`system_prompt`）收到的是旧格式：没有媒体时是字符串，否则是带媒体 URL 的内容块。内联媒体使用 data URL。`bub.prompt.to_content(prompt)` 可以转换为用户内容。
+### `AgentPlugins` {#agentplugins-class}
 
-<a id="runtime-resources"></a>
+```python
+class AgentPlugins:
+    def __init__(
+        self,
+        framework: BubFramework | None = None,
+        *,
+        plugins: Iterable[object] | None = None,
+    ) -> None: ...
 
-## 运行时资源
+    def running(self) -> AbstractAsyncContextManager[AsyncExitStack]: ...
 
-`framework.running()` 先进入 lifespan providers，再获取会话存储和 steering inbox。退出时按相反顺序关闭已经进入的资源，发生错误时也是如此。执行环境缓存也会在作用域退出时关闭。
+    def components(self) -> AgentComponents: ...
 
-需要清理的 provider 可以 yield 一次，在 `finally` 中释放资源。资源生命周期应由这种方式管理；`save_state` 只覆盖准备完成后的模型阶段。
+    def attach(self, agent: Agent, *, tools: bool = True) -> Agent: ...
 
-`bub run` 为一条消息打开作用域，`bub chat` 和 `bub gateway` 在应用运行期间保持作用域开启。嵌入应用的宿主也应这样做。作用域外的 `get_tape_store()` 返回 `None`。
-
-内置 lifespan 管理在作用域中启动的后台 shell 进程。POSIX 上关闭进程组，Windows 当前关闭直接 shell 进程。脱离进程组的进程，以及应用被强制终止的情况，需要宿主层面的进程管理。
-
-Tape sidecar providers 提供具名的关联 tape。Bub 把它们挂载到应用的根 Tape 上，fork、merge、archive 和 reset 都会处理已挂载的 sidecars。移除 provider 后，已保存的数据仍然保留。公共存储语义见 [Tape 与上下文](/zh-cn/docs/concepts/tape-and-context/)。
-
-<a id="agent-loop-hooks-pluginagenthooks"></a>
-
-## 通过 PluginAgentHooks 拦截调用
-<span id="agent-loop-hooks-agenthooks"></span>
-
-`AgentPlugins.attach()` 把 `PluginAgentHooks` 订阅到核心 agent 的 LLM 和工具开始、完成事件上；`BubAgent` 将它接到自身。应用插件通过这个适配器介入调用。
-
-Before hooks 按 hook 优先级运行，每个实现都能看到前序实现的更新。`LLMCallDecision.finish(text)`、`ToolCallDecision.replace(result)` 和 `ToolCallDecision.deny(message)` 会停止后续 before 实现。LLM finish decision 不调用供应商，也没有对应的 `after_llm_call`。
-
-适配器捕获每个拦截 hook 的普通异常，记录 `hook.agent_hook_failed` 后继续。需要拒绝调用时，返回 decision。直接注册到[核心 EventBus](/zh-cn/docs/concepts/events/#delivery) 的 handler 会向上传播异常。
-
-After hooks 观察成功调用和普通异常失败，取消与消费方关闭不会触发。`after_tool_call` 也会处理拒绝或替换的调用，各个实现共享同一个结果对象。修改 `result.result` 会改变向后传递的值，`result.error` 则保留原始失败信息。
-
-载荷类型定义在 `bub.core.events` 中，并由 `bub.hooks.interception` 重新导出。`run_id` 将调用与记录条目关联起来。
+    async def build_state(
+        self,
+        session_id: str,
+        *,
+        message: Envelope | None = None,
+        agent: Agent | None = None,
+    ) -> TurnState: ...
+```

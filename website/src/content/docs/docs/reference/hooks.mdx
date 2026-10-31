@@ -1,103 +1,688 @@
 ---
-title: Application hooks
-description: Hook signatures, dispatch rules, and resource lifecycles for Bub plugins.
+title: Hooks
+description: Review the overview, source signatures, return values, execution order, and lifecycle of 27 hooks, organized by Turn, App, and Agent.
 ---
 
-Hooks connect plugins to the Bub application. This reference lists the 26 hooks declared by `BubHookSpecs`. For examples, see [Change application behavior](/docs/build/hooks/); for the order of application stages, see [The application turn](/docs/concepts/turn-pipeline/).
+This page lists the complete interface of all 27 hooks. A hook is an extension point through which plugins participate in framework flows: the same hook can be implemented by multiple plugins, the framework calls them in the order described below, and it decides what happens next based on their return values.
 
-`first` below means the first non-`None` result in hook priority order. `all` means every implementation is called. An ordinary hook exception stops that dispatch and propagates; the [agent interception hooks](#agent-loop-hooks-pluginagenthooks) and `on_error` have separate exception handling.
+For concrete plugin examples, see [Plugins and hooks](/docs/app/plugins/); to learn which stages a message passes through, see [Turn](/docs/concepts/turn/#stages).
 
-## Turn hooks
+## Understanding dispatch modes {#notation}
 
-| Hook | Signature | Behavior |
+Every hook's overview and details state its "dispatch mode", that is: **how the framework calls the multiple implementations of the hook and how it handles their return values.**
+
+| Dispatch mode | Meaning |
+| --- | --- |
+| **First result** | Calls implementations one by one by priority and uses the first non-`None` return value; later implementations are not run. `False`, `""`, and `[]` are also return values and do not equal `None` |
+| **Run all** | Calls every implementation and collects the return values. Whether one failure affects the whole depends on the specific hook and call site |
+| **Sequential** | Calls implementations one by one by priority; later implementations can see the results modified by earlier ones. Certain return values can end processing early. Used by Agent hooks |
+
+These types are also used in the tables:
+
+| Type | Meaning |
+| --- | --- |
+| `Envelope` | An alias for `Any`. A mapping, dataclass, Pydantic model, or object with attributes can be passed |
+| `TurnState` | An alias for `dict[str, Any]`, shared by hooks, tools, and events within the current Turn |
+
+All signatures below are taken directly from `bub.hooks.specs.BubHookSpecs`, so they uniformly use `def` and keep `self`. When implementing, declare only the parameters you actually use; the framework passes values by parameter name. Whether an asynchronous implementation is available depends on the specific call path; when it is unsupported, that implementation is skipped and `hook.async_not_supported` is logged.
+
+## With multiple plugins, who runs first {#priority-and-dispatch}
+
+Bub uses pluggy to register hook implementations, and `HookRuntime` to invoke them uniformly.
+
+| Rule | Meaning |
+| --- | --- |
+| Registration order | Builtin implementations (`builtin`) are registered first, then plugins from `bub` entry points |
+| Priority | `@hookimpl(tryfirst=True)` runs first; `trylast=True` runs last |
+| Same priority | Implementations registered later run first |
+| Runtime order | Calls the list returned by `get_hookimpls()` in reverse order, one item at a time |
+| Argument passing | Passes arguments according to the `argnames` declared by an implementation; declare only the parameters you actually use |
+| Unsupported arguments | `wrapper=True`, `hookwrapper=True` |
+
+If you call `HookRuntime` directly, the two result-collection methods differ as follows:
+
+| Method | Behavior |
+| --- | --- |
+| `call_first` / `call_first_sync` | Returns the first non-`None` result; empty containers and `False` also count as results |
+| `call_many` / `call_many_sync` | Runs every implementation and collects results that were not skipped; whether it continues after a failure depends on the specific call site |
+
+The plugin list printed by `bub hooks` follows pluggy's registration order, **not the actual execution order**. When diagnosing hook order, rely on the priority rules and the logs.
+
+## Turn Hooks {#turn-hooks}
+
+A single message-processing flow is called a **Turn**. The following nine hooks are triggered by `BubFramework.process_inbound()` and cover the whole process from determining the session to sending the reply.
+
+| Hook | What it does | Dispatch |
 | --- | --- | --- |
-| `resolve_session` | `(message: Envelope) -> str` | First result; a falsy result falls back to the framework's channel/chat session ID. |
-| `load_state` | `(message: Envelope, session_id: str) -> TurnState` | Collect all state fragments; merge lower-priority fragments first so higher-priority values win. |
-| `build_prompt` | `(message: Envelope, session_id: str, state: TurnState) -> list[UserContent] \| LegacyPrompt` | First result; a falsy selected value falls back to the inbound content rather than trying another implementation. |
-| `run_model` | `(prompt, session_id, state) -> str` | Text result for the model stage. Implement this or `run_model_stream`. |
-| `run_model_stream` | `(prompt, session_id, state) -> AsyncStreamEvents` | Stream result for the model stage. Implement this or `run_model`. |
-| `continue_prompt` | `(prompt: LegacyPrompt \| None, tape: Tape, state: StreamState) -> str \| None` | First result, called through `AgentPlugins` on a `StepFinished` event whose status is `continue`. Adds a user message when a string is returned. |
-| `save_state` | `(session_id, state, message, model_output) -> None` | All implementations, in the model stage's `finally` block. Earlier session, state, or prompt failures skip it. |
-| `render_outbound` | `(message, session_id, state, model_output) -> list[Envelope]` | Collect and concatenate batches. An empty combined result uses the framework's default output envelope. |
-| `dispatch_outbound` | `(message: Envelope) -> bool` | Call every implementation for each outbound message. |
+| [`resolve_session`](#resolve_session) | Determines which session a message belongs to | First result |
+| [`load_state`](#load_state) | Restores the state needed for this Turn | Run all and merge results |
+| [`build_prompt`](#build_prompt) | Builds the prompt sent to the model | First result |
+| [`run_model`](#run_model) | Calls the model and returns the complete text | First result |
+| [`run_model_stream`](#run_model_stream) | Calls the model and returns streaming events | First result |
+| [`continue_prompt`](#continue_prompt) | Optionally appends a user message when the Agent continues running | First result |
+| [`save_state`](#save_state) | Saves application state after the model stage ends | Run all |
+| [`render_outbound`](#render_outbound) | Converts model output into messages to be sent | Run all and concatenate messages |
+| [`dispatch_outbound`](#dispatch_outbound) | Hands messages to be sent to external channels | Run all, once per message |
 
-These hooks may be synchronous or asynchronous. `continue_prompt` receives a `StreamState`; the other `state` parameters in this table are mutable `TurnState` dictionaries.
+Exceptions from this group of hooks are ultimately caught by `process_inbound()`: it first calls `on_error(stage="turn", ...)` and then re-raises the original exception. When no implementation is found in the model stage, or when an error is reported in streaming output, `stage="run_model"` is used.
 
-The model adapter chooses between text and stream hooks by examining plugins in reverse registration order. It then dispatches the selected hook name by hook priority. It can collect a stream into text or wrap a text response in a stream. Choose one model hook per plugin.
+### `resolve_session` {#resolve_session}
 
-## Application resources and configuration
+Determines the `session_id` for a new message so the framework knows which session it belongs to.
 
-| Hook | Signature | Behavior |
+```python
+def resolve_session(self, message: Envelope) -> str:
+```
+
+- **Dispatch**: First result.
+- **Default fallback**: When the result is empty, `channel:chat_id` is used as the session ID.
+
+### `load_state` {#load_state}
+
+Restores the application state needed for this Turn from the session store.
+
+```python
+def load_state(self, message: Envelope, session_id: str) -> TurnState:
+```
+
+- **Dispatch**: Run all; lower-priority results are merged first, higher-priority results after.
+- **Return value**: Non-dictionary return values are ignored.
+
+### `build_prompt` {#build_prompt}
+
+Builds the prompt sent to the model based on the original message and the restored state.
+
+```python
+def build_prompt(self, message: Envelope, session_id: str, state: TurnState) -> list[UserContent] | LegacyPrompt:
+```
+
+- **Dispatch**: First result.
+- **Default fallback**: Uses the first non-`None` return value; if that value is `""` or `[]`, the framework does not try later implementations and instead uses the original message content.
+
+#### Prompt content {#prompt-content}
+
+`build_prompt` returns `list[UserContent]`; list elements can be constructed as follows:
+
+| Content | Construction |
+| --- | --- |
+| Text | `str` |
+| Image | `republic.image(url, media_type=...)` |
+| Audio | `republic.audio(url, media_type=...)` |
+| Video | `republic.video(url, media_type=...)` |
+
+Hooks that use the legacy prompt format (`run_model`, `run_model_stream`, `continue_prompt`, and `system_prompt`) receive:
+
+| Situation | Format received |
+| --- | --- |
+| No media | `str` |
+| Contains media | A list of `[{"type", "media_type", "url"}]` content blocks |
+
+`to_content()` still accepts legacy strings and content-block lists, and handles the format conversion. To convert back to the legacy format, use `bub.prompt.to_legacy_prompt()`.
+
+### `run_model` {#run_model}
+
+Calls the model and returns the complete text output directly.
+
+```python
+def run_model(self, prompt: str | list[dict], session_id: str, state: TurnState) -> str:
+```
+
+- **Dispatch**: First result.
+- **Prompt format**: Receives the legacy prompt format; see [Prompt content](#prompt-content).
+
+### `run_model_stream` {#run_model_stream}
+
+Calls the model and returns streaming events that can be consumed one at a time.
+
+```python
+def run_model_stream(self, prompt: str | list[dict], session_id: str, state: TurnState) -> AsyncStreamEvents:
+```
+
+- **Dispatch**: First result.
+- **Prompt format**: Receives the legacy prompt format; see [Prompt content](#prompt-content).
+- **Relationship with `run_model`**: You only need to implement one of the two. Plain text can be converted into streaming output, and streaming output can be aggregated into plain text.
+- **After replacing the builtin model stage**: The builtin Agent's interception hooks do not run automatically.
+
+The framework selects the model hook implementation according to the priority rules above; `tryfirst` / `trylast` also apply to these two hooks.
+
+### `continue_prompt` {#continue_prompt}
+
+Optionally adds a user message when the Agent needs to continue running.
+
+```python
+def continue_prompt(self, prompt: str | list[dict] | None, tape: Tape, state: StreamState) -> str | None:
+```
+
+- **Dispatch**: First result.
+- **When it is called**: When `StepFinished.status == "continue"`.
+- **Returning `None`**: The conversation continues directly without adding a new user message.
+- **State type**: Receives `StreamState`, not `TurnState`.
+- **Prompt format**: Receives the legacy prompt format; see [Prompt content](#prompt-content).
+
+### `save_state` {#save_state}
+
+Saves application state after the model stage ends.
+
+```python
+def save_state(
+    self,
+    session_id: str,
+    state: TurnState,
+    message: Envelope,
+    model_output: str,
+) -> None:
+```
+
+- **Dispatch**: Run all.
+- **When it is called**: In the `finally` block of the model stage. As long as execution has entered the model stage, it runs whether the model succeeds, fails, or is cancelled.
+- **Scope**: It only saves application state; it is not responsible for cleaning up resources.
+
+### `render_outbound` {#render_outbound}
+
+Converts model output into one or more messages to be sent.
+
+```python
+def render_outbound(
+    self,
+    message: Envelope,
+    session_id: str,
+    state: TurnState,
+    model_output: str,
+) -> list[Envelope]:
+```
+
+- **Dispatch**: Run all; the message lists returned by each implementation are expanded and concatenated in order.
+- **Default fallback**: If no implementation produces a message to send, the framework generates one reply from `model_output`, reusing the original message's `channel` and `chat_id`.
+
+### `dispatch_outbound` {#dispatch_outbound}
+
+Hands a message to be sent to an external channel.
+
+```python
+def dispatch_outbound(self, message: Envelope) -> bool:
+```
+
+- **Dispatch**: Run all; called once per message to be sent.
+- **Return value**: Ignored; you cannot prevent other implementations from running through the return value.
+- **When you need to filter messages**: Do it in the `render_outbound` stage.
+
+## App Hooks {#application-hooks}
+
+The following 14 hooks manage configuration, resources, channels, and tools. They serve the whole application rather than handling a single message.
+
+| Hook | What it does | Dispatch |
 | --- | --- | --- |
-| `register_cli_commands` | `(app: typer.Typer) -> None` | All implementations, synchronously during CLI creation. |
-| `onboard_config` | `(current_config: dict) -> dict \| None` | Synchronous; merge each returned fragment into the accumulated configuration. A non-dict result raises `TypeError`. |
-| `provide_model_options` | `(session_id: str, workspace: Path \| None) -> ModelOptions \| None` | Collect choices in priority order. May be async; the caller owns selection and persistence. |
-| `provide_environment` | `(session_id: str, workspace: Path) -> Environment \| None` | First result; may be async. Cache one environment per session and close it when `running()` exits. |
-| `system_prompt` | `(prompt, state: TurnState) -> str` | Synchronous; join truthy fragments in reverse hook priority order with blank lines. |
-| `provide_tape_store` | `() -> TapeStore \| AsyncTapeStore \| None` | First result, acquired synchronously when `running()` opens; a generator may yield the active store. |
-| `provide_lifespan` | `() -> Iterator[None] \| AsyncIterator[None] \| None` | Collect resource lifespans and enter each once per `running()` scope. |
-| `provide_tape_sidecar` | `() -> TapeSidecar` | Synchronous; collect sidecars, keeping the first in priority order for each name. |
-| `provide_channels` | `(message_handler: MessageHandler) -> list[Channel]` | Synchronous; collect channels, keeping the first in priority order for each `Channel.name`. |
-| `build_tape_context` | `() -> TapeContext` | First synchronous result; selects the context strategy for the application agent. |
-| `admit_message` | `(session_id, message, turn: TurnSnapshot) -> AdmitDecision \| None` | First result before channel scheduling; may be async. `None` leaves the channel's default concurrent scheduling in place. |
-| `provide_tools` | `() -> list[Tool]` | Synchronous; collect tools, keeping the first in priority order for each name. |
-| `provide_steering_inbox` | `() -> SteeringInbox \| None` | First result, acquired synchronously when `running()` opens; a generator may yield the inbox. |
-| `on_error` | `(stage: str, error: Exception, message: Envelope \| None) -> None` | Notify every observer. Observer exceptions are logged and skipped. Async implementations work only on the async notification path. |
+| [`register_cli_commands`](#register_cli_commands) | Registers commands with the root CLI app | Run all |
+| [`onboard_config`](#onboard_config) | Supplements or modifies onboarding configuration | Run all |
+| [`provide_model_options`](#provide_model_options) | Provides models to choose from | Run all and merge results |
+| [`provide_environment`](#provide_environment) | Provides the environment for tool execution and file access | First result |
+| [`on_error`](#on_error) | Observes exceptions from framework stages | Run all |
+| [`system_prompt`](#system_prompt) | Provides system prompts | Run all and concatenate results |
+| [`provide_tape_store`](#provide_tape_store) | Provides storage for conversation Tapes | First result |
+| [`provide_lifespan`](#provide_lifespan) | Manages resources for the application runtime | Run all |
+| [`provide_tape_sidecar`](#provide_tape_sidecar) | Attaches a Sidecar to each session Tape | Run all and deduplicate by name |
+| [`provide_channels`](#provide_channels) | Provides channels for receiving messages | Run all and deduplicate by name |
+| [`build_tape_context`](#build_tape_context) | Builds the Tape context for the current session | First result |
+| [`admit_message`](#admit_message) | Decides how to handle a new message | First result |
+| [`provide_steering_inbox`](#provide_steering_inbox) | Provides the inbox for messages that steer the current task | First result |
+| [`provide_tools`](#provide_tools) | Provides tools to the Agent | Run all and deduplicate by name |
 
-Synchronous dispatch skips awaitable return values with a `hook.async_not_supported` warning. Resource providers can return sync or async generators, which Bub enters as context managers.
+### `register_cli_commands` {#register_cli_commands}
 
-## Agent interception hooks
+Registers custom CLI commands with Bub's root Typer app.
 
-| Hook | Signature | Behavior |
+```python
+def register_cli_commands(self, app: Any) -> None:
+```
+
+- **Dispatch**: Run all.
+
+### `onboard_config` {#onboard_config}
+
+Supplements or modifies configuration during onboarding.
+
+```python
+def onboard_config(self, current_config: dict[str, Any]) -> dict[str, Any] | None:
+```
+
+- **Dispatch**: Run all.
+- **Input**: The currently loaded configuration, plus the modifications earlier implementations have made to it.
+- **Return value**: The returned dictionary is merged into the configuration; the value used for merging must be a dictionary, otherwise a `TypeError` is raised.
+- **Plugin filtering**: `collect_onboard_config()` is responsible for filtering by plugin name.
+
+### `provide_model_options` {#provide_model_options}
+
+Provides models for the session to choose from.
+
+```python
+def provide_model_options(
+    self,
+    session_id: str,
+    workspace: Path | None,
+) -> ModelOptions | None:
+```
+
+- **Dispatch**: Run all; merges model lists and keeps the first `current_model`.
+- **Scope**: It only provides candidate models. Whether to show them to the user, and how to persist the current model, is up to the caller.
+
+### `provide_environment` {#provide_environment}
+
+Provides the runtime environment for `bash`, file tools, and code execution.
+
+```python
+def provide_environment(self, session_id: str, workspace: Path) -> Environment | None:
+```
+
+- **Dispatch**: First result.
+- **Lifecycle**: One is cached per session and closed when `running()` exits.
+- **Default implementation**: When there is no custom implementation, the builtin implementation returns `LocalEnvironment`.
+
+### `on_error` {#on_error}
+
+Observes exceptions from framework stages; useful for logging and error reporting.
+
+```python
+def on_error(self, stage: str, error: Exception, message: Envelope | None) -> None:
+```
+
+- **Dispatch**: Run all; when an implementation fails, it only logs `hook.on_error_failed` and is skipped.
+- **Scope**: Only for observing errors; it cannot recover the task or prevent the original exception from propagating.
+
+Common values of `stage`:
+
+| `stage` | When it appears |
+| --- | --- |
+| `turn` | An uncategorized exception occurs in a Turn, including exceptions in prompt, model-stage, and reply handling |
+| `run_model` | No model implementation is found, or an error is reported in streaming output |
+| `resolve_session` | Session resolution fails before a channel decides whether to accept a message |
+| `admit_message` | An error occurs while a channel decides whether to accept a message |
+
+### `system_prompt` {#system_prompt}
+
+Provides a system prompt block that is prepended to the model prompt.
+
+```python
+def system_prompt(self, prompt: str | list[dict], state: TurnState) -> str:
+```
+
+- **Dispatch**: Run all; joins non-empty results with blank lines from low to high priority.
+- **Multiple implementations**: All results are kept and do not overwrite one another; even a higher-priority implementation can only append its own content.
+- **Prompt format**: Receives the legacy prompt format; see [Prompt content](#prompt-content).
+
+### `provide_tape_store` {#provide_tape_store}
+
+Provides the Tape store used to record conversations.
+
+```python
+def provide_tape_store(self) -> TapeStore | AsyncTapeStore | None:
+```
+
+- **Dispatch**: First result; may return a generator.
+- **When it is called**: Resolved only once during `framework.running()`. Outside that scope, `get_tape_store()` returns `None`.
+- **When you need to clean up resources**: Return a generator and release the connection in `finally`.
+- **Unsupported form**: Do not return an object decorated with `@contextmanager` / `@asynccontextmanager`; the runtime treats it as an ordinary value.
+
+### `provide_lifespan` {#provide_lifespan}
+
+Holds resources that need to be started and cleaned up during `framework.running()`.
+
+```python
+def provide_lifespan(self) -> AsyncIterator[None] | Iterator[None] | None:
+```
+
+- **Dispatch**: Run all; each generator is started as a context manager.
+- **Return value**: Must return a generator and `yield` exactly once.
+- **Startup failure**: If any generator fails to start, the entire `running()` cannot start.
+- **Unsupported form**: Do not return an object decorated with `@contextmanager` / `@asynccontextmanager`; the runtime treats it as an ordinary value.
+
+### `provide_tape_sidecar` {#provide_tape_sidecar}
+
+Provides a Sidecar for each session Tape, used to store data or capabilities attached to the main Tape.
+
+```python
+def provide_tape_sidecar(self) -> TapeSidecar:
+```
+
+- **Dispatch**: Run all; deduplicates by `name`, keeping the highest-priority result when names collide.
+- **Storage name**: The Tape is physically stored under the name `<main tape>__sidecar__<sidecar>`.
+- **Lifecycle**: It is forked, merged, archived, and reset together with the main Tape. Removing the hook that provides a Sidecar does not delete existing data.
+
+### `provide_channels` {#provide_channels}
+
+Provides channels for receiving messages.
+
+```python
+def provide_channels(self, message_handler: MessageHandler) -> list[Channel]:
+```
+
+- **Dispatch**: Run all; deduplicates by `name`, keeping the highest-priority result when names collide.
+- **`message_handler`**: An async function `(message) -> None`, called by the channel when a message arrives.
+- **Return value**: Must return a list of channels, not a single channel.
+
+### `build_tape_context` {#build_tape_context}
+
+Builds the Tape context for the current session, used to generate context messages.
+
+```python
+def build_tape_context(self) -> TapeContext:
+```
+
+- **Dispatch**: First result.
+- **Return value**: Must be a `TapeContext`, otherwise a `TypeError` is raised.
+
+### `admit_message` {#admit_message}
+
+Decides, when a new message arrives, whether to process it immediately, drop it, queue it, or use it to steer the current task.
+
+```python
+def admit_message(
+    self,
+    session_id: str,
+    message: Envelope,
+    turn: TurnSnapshot,
+) -> AdmitDecision | None:
+```
+
+- **Dispatch**: First result.
+- **Returning `None`**: Handles the message according to the channel's default rules.
+- **Scope**: It only decides how to handle the new message and does not create tasks; the actual effects are carried out by `ChannelManager`.
+
+When it returns an `AdmitDecision`, `ChannelManager` handles the new message according to `action`:
+
+| `action` | Session is currently processing a message | Session is idle |
 | --- | --- | --- |
-| `before_llm_call` | `(request: LLMCallRequest, state: TurnState) -> LLMCallRequest \| LLMCallDecision \| None` | Chain request updates; a finish decision skips the provider and stops the chain. |
-| `after_llm_call` | `(request: LLMCallRequest, result: LLMCallResult, state: TurnState) -> None` | Observe a completed provider call or ordinary failure. |
-| `before_tool_call` | `(call: ToolCall, state: TurnState) -> ToolCallDecision \| None` | Chain argument updates; replace or deny stops the chain. |
-| `after_tool_call` | `(call: ToolCall, result: ToolCallResult, state: TurnState) -> None` | Handle tool success, failure, replacement, or denial. Assign `result.result` to change the resulting value. |
+| `process` | Creates a new Turn immediately, in parallel with the current Turn | Creates a Turn immediately |
+| `drop` | Drops the new message | Drops the new message |
+| `follow_up` | Queues it; processes it in arrival order after the current Turn completes | Creates a Turn immediately |
+| `steer` | Sends the new message to the current Turn to steer the running task; if it cannot be injected or is not handled in time, it is queued instead | Creates a Turn immediately |
 
-<span id="how-hooks-are-invoked"></span>
+In short, `steer` means "adjust the current task to the new requirement", while `follow_up` means "handle the next message after the current task completes".
 
-<a id="iteration-order"></a>
+### `provide_steering_inbox` {#provide_steering_inbox}
 
-## Priority and dispatch
+Provides an inbox for holding `steer` messages temporarily; `MessagesPending` then delivers those messages to the Agent.
 
-Bub registers builtin hooks first, then installed entry-point plugins. For ordinary implementations at the same priority, later registrations run first. `@hookimpl(tryfirst=True)` and `@hookimpl(trylast=True)` alter priority. These flags and registration order together determine which implementation runs first.
+```python
+def provide_steering_inbox(self) -> SteeringInbox | None:
+```
 
-`HookRuntime` invokes ordinary implementations directly, using the reverse of pluggy's `get_hookimpls()` list. Pluggy wrapper flags (`wrapper=True` and `hookwrapper=True`) are unsupported by this dispatch path.
+- **Dispatch**: First result; may return a generator.
+- **When you need to clean up resources**: Return a generator and release the connection in `finally`.
+- **Unsupported form**: Do not return an object decorated with `@contextmanager` / `@asynccontextmanager`; the runtime treats it as an ordinary value.
 
-`call_first` stops at the first non-`None` value. `call_many` collects values from all implementations. Their sync variants skip awaitables. Each implementation receives only the arguments it declares.
+### `provide_tools` {#provide_tools}
 
-`bub hooks` confirms registration by displaying bindings in pluggy's stored order. Execution follows the priority rules above.
+Provides custom tools to the Agent.
 
-## Prompt content
+```python
+def provide_tools(self) -> list[Tool]:
+```
 
-`build_prompt` can return a list containing strings and Republic media: `republic.Image`, `Audio`, or `Video`. Build media with `republic.image(...)`, `republic.audio(...)`, and `republic.video(...)`.
+- **Dispatch**: Run all; deduplicates by `name`, keeping the highest-priority result when names collide.
+- **Duplicate tool names**: A tool may be provided multiple times, but only the highest-priority implementation is used and the other tools with the same name are ignored.
 
-Legacy strings and content-block dictionaries remain accepted. Hooks receiving a prompt (`run_model`, `run_model_stream`, `continue_prompt`, `system_prompt`) receive the legacy form: a string without media, otherwise content blocks with media URLs. Inline media uses data URLs. `bub.prompt.to_content(prompt)` converts this to user content.
+### When resources are created and released {#runtime-resources}
 
-## Runtime resources
+`framework.running()` acquires resources in the following order:
 
-`framework.running()` enters lifespan providers, then acquires the tape store and steering inbox. It closes entered resources in reverse order, including after an error. The environment cache is also closed on scope exit.
+1. Starts all generators returned by `provide_lifespan`.
+2. Acquires the result of `provide_tape_store`.
+3. Acquires the result of `provide_steering_inbox`.
 
-A provider that needs cleanup can yield once and release its resource in `finally`. Use this for resource ownership; `save_state` only covers the model stage of a prepared turn.
+On exit, the framework shuts down session execution environments and then releases the resources above in reverse order; cleanup runs even if an exception occurs partway through.
 
-`bub run` opens the scope for one message. `bub chat` and `bub gateway` keep it open while the application runs. A host embedding the application should do the same. `get_tape_store()` returns `None` outside the scope.
+| Scenario | How long resources last |
+| --- | --- |
+| `bub run` | While processing one message |
+| `bub chat` / `bub gateway` | For the entire application runtime |
+| Embedded in another program | Determined by the host; should usually cover the whole service lifecycle |
 
-The builtin lifespan owns background shell processes started within that scope. On POSIX, shutdown targets their process groups; Windows currently targets direct shell processes. Processes outside those groups and forced process termination require host-level supervision.
+- Do not let multiple `running()` scopes overlap on the same Framework.
+- Background shell process-tree termination: on POSIX, `SIGTERM` is sent first and then `SIGKILL`; on Windows, only the direct shell is terminated. Even if the host forcibly kills the process, you still need to complete cleanup yourself.
 
-Tape sidecar providers contribute named sibling tapes. Bub mounts them on the application's root Tape and applies fork, merge, archive, and reset to mounted sidecars. Stored data remains after a provider is removed. See [Tape and context](/docs/concepts/tape-and-context/) for shared storage semantics.
+#### Errors during the runtime {#runtime-errors}
 
-<a id="agent-loop-hooks-pluginagenthooks"></a>
+`on_error` can observe framework errors that occur during the runtime above, but it cannot recover the task and does not change how exceptions propagate. When embedding in another program, the host should catch exceptions raised by `process_inbound()` itself. Unhandled CLI exceptions usually exit with a non-zero status; however, for some model-stage errors, `bub run` only logs them and returns fallback text, so it may still exit with `0`.
 
-## Interception through PluginAgentHooks
-<span id="agent-loop-hooks-agenthooks"></span>
+## Agent Hooks {#interception-through-pluginagenthooks}
 
-`AgentPlugins.attach()` subscribes `PluginAgentHooks` to the core agent's LLM and tool start/finish events; `BubAgent` attaches it to itself. This adapter gives application plugins access to those calls.
+These four hooks run before and after model or tool calls. `AgentPlugins` triggers them by subscribing to Agent events, and they can also be connected directly through [`PluginAgentHooks`](#pluginagenthooks).
 
-The before hooks run in hook priority order. Each sees updates made by earlier implementations. `LLMCallDecision.finish(text)`, `ToolCallDecision.replace(result)`, and `ToolCallDecision.deny(message)` stop the remaining before implementations. A finished LLM decision never calls the provider and has no matching `after_llm_call`.
+| Hook | What it does | Dispatch |
+| --- | --- | --- |
+| [`before_llm_call`](#before_llm_call) | Observes, modifies, or terminates the request before calling the model | Sequential |
+| [`after_llm_call`](#after_llm_call) | Observes the final result of one model call | Run all |
+| [`before_tool_call`](#before_tool_call) | Modifies arguments, replaces the result, or denies the call before executing a tool | Sequential |
+| [`after_tool_call`](#after_tool_call) | Observes or modifies the final result of one tool call | Run all |
 
-The adapter catches ordinary exceptions from each interception hook, logs `hook.agent_hook_failed`, and continues. Return a decision to deny a call. Handlers registered directly on the [core EventBus](/docs/concepts/events/#delivery) propagate their exceptions.
+When an implementation in this group raises an exception, the framework logs `hook.agent_hook_failed` and skips it; when the return type is incorrect, it logs `hook.agent_hook_bad_return` and skips it. **Raising an exception does not block tool execution**; to intercept a tool you must return a decision.
 
-After hooks observe successful calls and ordinary failures. Cancellation and consumer close bypass them. `after_tool_call` also runs for denied or replaced calls; implementations share the same result object. Changing `result.result` changes the value passed onward, while `result.error` retains the original failure.
+### `before_llm_call` {#before_llm_call}
 
-Payload types live in `bub.core.events` and are re-exported by `bub.hooks.interception`. Their `run_id` correlates calls with recorded entries.
+Observes or modifies the request, or supplies the final text directly, before the request is sent to the model provider.
+
+```python
+def before_llm_call(self, request: LLMCallRequest, state: TurnState) -> LLMCallRequest | LLMCallDecision | None:
+```
+
+- **Dispatch**: Sequential. When it returns a modified `LLMCallRequest`, later implementations see the new value.
+- **Modifying the request**: Because this is a frozen dataclass, use `dataclasses.replace()` to create a modified copy.
+- **Ending early**: `LLMCallDecision.finish(text)` skips the model provider and uses `text` directly as the model output; it does not trigger `after_llm_call` either.
+- **Tool list**: `LLMCallRequest` only exposes tool names and cannot add or remove tools through it. To change the tool set, do it in `Agent.prepare_tools()` or in the application's tool policy.
+
+### `after_llm_call` {#after_llm_call}
+
+Observes the final result of one model call.
+
+```python
+def after_llm_call(self, request: LLMCallRequest, result: LLMCallResult, state: TurnState) -> None:
+```
+
+- **Dispatch**: Run all; return values are ignored.
+- **When it is called**: Runs whether the call succeeds or fails with an ordinary exception.
+- **When it does not run**: When the task is cancelled, the consumer closes the output stream on its own, or `before_llm_call` ends early via `finish(text)`.
+
+### `before_tool_call` {#before_tool_call}
+
+Modifies arguments, directly replaces the result, or denies the call before the tool executes.
+
+```python
+def before_tool_call(self, call: ToolCall, state: TurnState) -> ToolCallDecision | None:
+```
+
+- **Dispatch**: Sequential.
+- **Continuing**: Return `None` or `ToolCallDecision.proceed(arguments)`; the latter can modify arguments, and later implementations see the new values.
+- **Replacing the result**: `ToolCallDecision.replace(result)` skips the tool, uses the supplied result, and stops later interception implementations from running.
+- **Denying the call**: `ToolCallDecision.deny(message)` skips the tool and returns a tool error, and also stops later interception implementations from running.
+
+### `after_tool_call` {#after_tool_call}
+
+Observes the final result of one tool call, and can also modify the result the model actually sees.
+
+```python
+def after_tool_call(self, call: ToolCall, result: ToolCallResult, state: TurnState) -> None:
+```
+
+- **Dispatch**: Run all; all implementations share the same mutable result, and return values are ignored.
+- **When it is called**: Runs whether the call succeeds, fails with an ordinary exception, is denied, or is replaced.
+- **When it does not run**: When the task is cancelled or the consumer closes the output stream on its own.
+- **Modifying the result**: Assigning to `result.result` changes the result the model sees; `result.error` still retains the original error.
+
+### Interception payload definitions {#interception-payloads}
+
+The following field definitions are taken directly from `bub.core.events` and match the Agent hook signatures. To focus on the interface, the code omits docstrings and convenience constructors.
+
+#### `LLMCallRequest` {#llmcallrequest}
+
+A request about to be sent to the model provider. The object is immutable; create a copy with `dataclasses.replace()`.
+
+```python
+@dataclass(frozen=True)
+class LLMCallRequest:
+    run_id: str
+    model: str
+    messages: list[republic.Message]
+    tool_names: tuple[str, ...] = ()
+    max_tokens: int | None = None
+```
+
+#### `LLMCallResult` {#llmcallresult}
+
+The final result of one model call. For streaming calls, the complete result is aggregated first, and then `after_llm_call` is triggered.
+
+```python
+@dataclass(frozen=True)
+class LLMCallResult:
+    run_id: str
+    text: str | None = None
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
+    usage: dict[str, Any] | None = None
+    error: Exception | None = None
+    duration_ms: int = 0
+```
+
+#### `LLMCallDecision` {#llmcalldecision}
+
+The early-termination decision returned by `before_llm_call`, constructed with `LLMCallDecision.finish(text)`.
+
+```python
+@dataclass(frozen=True)
+class LLMCallDecision:
+    action: Literal["finish"] = "finish"
+    text: str = ""
+```
+
+#### `ToolCall` {#toolcall}
+
+A tool call about to be executed. `context` is the tool runtime's context; it is `None` when no context is available.
+
+```python
+@dataclass(frozen=True)
+class ToolCall:
+    run_id: str
+    tool: str
+    arguments: dict[str, Any]
+    context: ToolContext | None = field(default=None, repr=False, compare=False)
+```
+
+#### `ToolCallDecision` {#toolcalldecision}
+
+The handling decision returned by `before_tool_call`, constructed with `proceed()`, `replace()`, and `deny()` respectively.
+
+```python
+@dataclass(frozen=True)
+class ToolCallDecision:
+    action: Literal["proceed", "replace", "deny"] = "proceed"
+    arguments: dict[str, Any] | None = None
+    result: Any = None
+    message: str | None = None
+```
+
+#### `ToolCallResult` {#toolcallresult}
+
+The final result of one tool call. This dataclass is not `frozen=True`, so `after_tool_call` can assign directly to `result.result`.
+
+```python
+@dataclass
+class ToolCallResult:
+    run_id: str
+    tool: str
+    arguments: dict[str, Any]
+    result: Any = None
+    error: Exception | None = None
+    duration_ms: int = 0
+```
+
+## App hooks and Agent events {#app-hooks}
+
+The concept page explains who intervenes in which direction; this section covers the adapter details. For the relationship between the three kinds of data and the decision semantics, see [Agent events](/docs/concepts/events/#three-kinds).
+
+### Event mapping {#event-mapping}
+
+`PluginAgentHooks` connects app hooks to Agent events:
+
+| App hook | Agent event | Notes |
+| --- | --- | --- |
+| `before_llm_call` | `LLMCallStarted` | Before every model call; may return a rewritten `LLMCallRequest` or an `LLMCallDecision` |
+| `after_llm_call` | `LLMCallFinished` | Once after success or ordinary failure |
+| `before_tool_call` | `ToolCallStarted` | Before every tool call; may `proceed(arguments)`, `replace(result)`, or `deny(message)` |
+| `after_tool_call` | `ToolCallFinished` | Fires on success, failure, denial, and replacement |
+| `continue_prompt` | `StepFinished` | Called only when `status == "continue"`; the result becomes `next_prompt` |
+| `provide_steering_inbox` | `MessagesPending` | Drains steering messages into the next step of the current Run |
+
+Model-visible tool calls, including built-in tools such as `.tape.handoff`, also pass through `ToolCallStarted` / `ToolCallFinished`.
+
+### How the two differ {#event-vs-hooks}
+
+| Aspect | Handling Agent events directly | App interception hooks |
+| --- | --- | --- |
+| Registration | `agent.events.on(Type, handler)` | `@hookimpl` in a plugin |
+| Order | Registration order | pluggy priority |
+| Argument changes | Replace `event.call` / `event.request` in place | Return `ToolCallDecision.proceed(arguments=...)` or a new `LLMCallRequest` |
+| Control | Set `event.decision` | Return a decision object |
+| Exceptions | Propagate to the `emit()` caller and may fail the Run | Logged and skipped; the Run continues |
+| Bad return type | Not applicable | Logged as a warning and skipped |
+
+A security policy written as a hook therefore cannot block a call by raising; it must return `deny(...)`.
+
+### How to subscribe {#subscribe}
+
+`PluginAgentHooks(runtime).subscribe(events)` attaches the four interception hooks to an existing or new event bus; `AgentPlugins.attach(agent)` subscribes automatically and also wires `continue_prompt`, the steering inbox, and the system prompt. For embedding and lifecycle requirements, see [Reusing Bub](/docs/integrations/reuse-app/#agent-loop-hooks).
+
+### PluginAgentHooks {#pluginagenthooks}
+
+`PluginAgentHooks` converts Agent events into the hooks above:
+
+| Agent event | Corresponding hook |
+| --- | --- |
+| `LLMCallStarted` | `before_llm_call` |
+| `LLMCallFinished` | `after_llm_call` |
+| `ToolCallStarted` | `before_tool_call` |
+| `ToolCallFinished` | `after_tool_call` |
+
+The difference between listening on the EventBus directly and using interception hooks is as follows:
+
+| Item | Interception hook | Direct EventBus handler |
+| --- | --- | --- |
+| Exception handling | Logged and skipped | Propagated to the `emit()` caller |
+| Control | Returns a decision | Modifies event fields |
+| Execution order | Determined by pluggy priority | Handler registration order |
+
+`PluginAgentHooks.subscribe(events)` attaches the adapter to an existing event bus, or creates a new one. `AgentPlugins.attach(agent)` subscribes automatically and connects `continue_prompt`, the steering inbox (`SteeringInbox`), and system prompts to the Agent.
+
+## AgentPlugins {#agentplugins}
+
+### `AgentComponents` {#agentcomponents}
+
+```python
+class AgentComponents(TypedDict, total=False):
+    store: TapeStore | AsyncTapeStore
+    context: TapeContext
+    sidecars: Sequence[TapeSidecar]
+```
+
+### `AgentPlugins` {#agentplugins-class}
+
+```python
+class AgentPlugins:
+    def __init__(
+        self,
+        framework: BubFramework | None = None,
+        *,
+        plugins: Iterable[object] | None = None,
+    ) -> None: ...
+
+    def running(self) -> AbstractAsyncContextManager[AsyncExitStack]: ...
+
+    def components(self) -> AgentComponents: ...
+
+    def attach(self, agent: Agent, *, tools: bool = True) -> Agent: ...
+
+    async def build_state(
+        self,
+        session_id: str,
+        *,
+        message: Envelope | None = None,
+        agent: Agent | None = None,
+    ) -> TurnState: ...
+```

@@ -1,0 +1,58 @@
+---
+title: Subagents
+description: Delegate tasks with the built-in subagent tool, choose a session strategy, and narrow the model, tools, and skills a subagent can use.
+---
+
+The Bub app includes a built-in `subagent` tool that lets the current agent delegate a specific subtask to another agent instance.
+
+Subagents are a good fit for tasks that generate a huge amount of intermediate context — **large-scale retrieval, long document reading, independent code review** — so that only the final conclusions return to the main session and intermediate details don't consume its context window.
+
+## Delegate a task {#delegate}
+
+In `bub chat`, you can ask the model to call a subagent directly:
+
+```text
+Use the subagent tool to review the authentication flow:
+1. Use a temporary session and allow only fs.read and bash;
+2. Do not modify files;
+3. Return the review findings with the relevant file paths.
+```
+
+The parent agent then calls the `subagent` tool; the child calls tools inside its own loop, finishes the analysis, and returns a summary to the parent.
+
+Beyond asking by hand, you can also set a rule in the workspace `AGENTS.md` or in a skill (for example, "complex retrieval or code review should be delegated to a read-only subagent first, and the main agent only applies changes based on the review") to get **automatic delegation**.
+
+## Choose a session strategy {#sessions}
+
+The `session` parameter decides how the child's session context is stored and who owns it:
+
+| Session mode | Behavior | Use it for |
+| --- | --- | --- |
+| `temp` (default) | Creates a separate `temp/<id>` temporary session; intermediate records are not merged into the main session afterwards | **Most common.** One-off analysis or research that returns conclusions only and keeps the main context clean |
+| `inherit` | Reuses the parent agent's current `session_id` | When every interaction of the subtask must be recorded in full in the main session history |
+| A custom string | Uses that fixed session ID | Longer tasks whose child session you need to resume or inspect later |
+
+:::tip
+The default `temp` mode returns only the final `output` text and any `errors` to the parent agent; every prompt and tool call produced inside the subtask stays out of the main conversation's context.
+:::
+
+## State sharing and capability boundaries {#boundaries}
+
+A subagent is derived from the same running instance as its parent. What it inherits and what stays isolated:
+
+| Resource | Boundary | Notes and controls |
+| --- | --- | --- |
+| **Base instance** | Fully shared | Shares plugin hooks, model credentials, and `BubAgent` configuration |
+| **Execution environment** | Fully shared | Shares the workspace directory, local filesystem, Shell processes, and network access |
+| **Model selection** | Set separately | Defaults to the parent model; use `model` (e.g. `model="gpt-4o-mini"`) to downgrade to a lighter model |
+| **Tools and skills** | Narrowed by parameter | All available by default; use `allowed_tools` and `allowed_skills` to narrow the set |
+| **Conversation records** | Isolated per session strategy | Decided by `session`; `temp` returns only the final summary text to the parent |
+
+Parameter types and defaults are listed in the [subagent reference](/docs/reference/tools/#subagent).
+
+### Security limits {#security-limits}
+
+Like the parent, a subagent also runs in the local environment under the current user's privileges, and can affect the current system:
+
+1. A temporary session isolates only **conversation records and model context**, not files, network requests, or system processes. File changes and network requests made by the child have real system side effects and are not rolled back on exit just because `temp` was used.
+2. Parameters such as `allowed_tools` can restrict model behavior when needed, but **they are not an enforced security boundary**. To hard-block dangerous commands or out-of-scope tools, use [tool interception hooks](/docs/reference/hooks/#interception-through-pluginagenthooks); for physical isolation, configure a separate [execution environment](/docs/app/tools/#environment).

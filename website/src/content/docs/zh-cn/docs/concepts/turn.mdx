@@ -1,0 +1,39 @@
+---
+title: Turn
+description: 应用层如何把一条入站消息处理成回复：生命周期阶段、TurnState 与失败边界。
+sidebar:
+  label: Turn
+---
+
+**Turn** 是应用层处理一条入站消息的完整生命周期，由 `BubFramework` 拥有。它固定了会话恢复、输入准备、模型执行、状态保存和回复投递的顺序与错误边界；Agent Run 只是其中的模型执行阶段。
+
+## 生命周期 {#stages}
+
+`process_inbound()` 让普通消息经过同一组阶段：
+
+| 阶段 | 职责 |
+| --- | --- |
+| `resolve_session` | 确定消息所属的会话 |
+| `load_state` | 恢复会话状态并绑定 Agent |
+| `build_prompt` | 识别命令，构造模型输入 |
+| `run_model` | 执行 Agent Run，产生模型输出 |
+| `save_state` | 保存需要跨 Turn 保留的应用状态 |
+| `render_outbound` | 把模型输出渲染为渠道消息 |
+| `dispatch_outbound` | 通过对应渠道投递回复 |
+
+每个阶段都有同名 hook，可以按契约扩展或替换默认行为，签名见 [Hooks 参考](/zh-cn/docs/reference/hooks/#turn-hooks)。
+
+Turn 与 Run 不是同一个粒度：直接命令可以在 Turn 内完成而不启动模型 Run，直接使用 `core.Agent` 创建的 Run 也不属于任何 Turn。**Session** 则是跨多条消息的标识与恢复边界，一个 Session 可以包含多个 Turn；会话标识本身不提供锁，是否允许并发由准入策略或宿主决定。
+
+## TurnState {#state}
+
+`TurnState` 是 hooks、工具和事件处理器在当前执行中共享的临时字典，只在本次 Turn 或 Run 内有效，不会自动持久化。
+
+需要留到下一个 Turn 的数据，应在 `save_state` 中保存、在 `load_state` 中恢复；对话与工具往返属于 Tape，不属于 TurnState，见 [数据应该放在哪里](/zh-cn/docs/concepts/tape/#state)。`_runtime_` 前缀的键由运行时写入，插件不应依赖。
+
+## 失败边界 {#failures}
+
+- 进入模型阶段后，`save_state` 一定在 `finally` 中执行，模型出错或超时也不会跳过。
+- `resolve_session`、`load_state`、`build_prompt` 的失败发生在该保障范围之前，不触发 `save_state`。
+- 未处理异常交给 `on_error` 观察和上报，然后重新抛出；`on_error` 不会恢复 Turn。
+- Turn 不是事务：工具已经修改的文件、发出的请求等外部副作用不会回滚。

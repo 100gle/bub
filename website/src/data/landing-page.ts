@@ -1,9 +1,5 @@
-// ---------------------------------------------------------------------------
-// Landing-page structured data — single source of truth for all landing-page
-// content. Locale-specific text (nav, footer, 404, etc.) lives in i18n/ui.ts.
-// Testimonial items are loaded separately from src/data/userwall.yml via the
-// Astro content collection; only section labels (eyebrow/heading) live here.
-// ---------------------------------------------------------------------------
+// Landing structured data. Locale chrome (nav/footer/404) → i18n/ui.ts.
+// Testimonial items → userwall.yml; only section labels live here.
 
 export type HeroData = {
   badge: string;
@@ -233,7 +229,7 @@ const landingPageData: Record<LandingLocale, LandingPageData> = {
           icon: 'webhook',
           title: '按需组合',
           description:
-            '内核精简，内置实现均可替换。每个轮次阶段都是一个 pluggy hook，可通过 Python 插件覆盖，无需 fork 运行时。',
+            '内核精简，内置实现均可替换。每个 turn 阶段都是一个 pluggy hook，可通过 Python 插件覆盖，无需 fork 运行时。',
         },
         {
           icon: 'layers',

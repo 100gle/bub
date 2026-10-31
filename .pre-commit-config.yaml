@@ -1,3 +1,6 @@
+# Standalone examples vendor frontend assets and serve as teaching material; skip all hooks.
+exclude: ^website/public/examples/
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: "v5.0.0"
@@ -14,6 +17,15 @@ repos:
         args: [--autofix, --no-sort-keys, --no-ensure-ascii]
       - id: end-of-file-fixer
       - id: trailing-whitespace
+
+  - repo: local
+    hooks:
+      - id: autocorrect
+        name: Autocorrect Markdown
+        entry: autocorrect --fix
+        language: node
+        additional_dependencies: ["autocorrect-node@2.14.0"]
+        files: ^website/src/content/docs/.*\.(md|mdx)$
 
   - repo: https://github.com/jendrikseipp/vulture
     rev: "v2.14"
