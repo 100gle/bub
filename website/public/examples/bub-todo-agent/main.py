@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [
-#   "bub @ git+https://github.com/bubbuild/bub@main",
+#   "bub>=0.6.0",
 #   "fastapi>=0.135",
 #   "python-dotenv",
 #   "uvicorn",
@@ -42,7 +42,7 @@ load_dotenv()
 
 # ===== App config: override via environment variables or .env, or edit the defaults here =====
 MODEL = os.getenv("BUB_MODEL", "openai:gpt-4.1")
-BASE_URL = os.getenv("BUB_API_BASE", "https://api.openai.com/v1")
+BASE_URL = os.getenv("BUB_API_BASE")
 API_KEY = os.getenv("BUB_API_KEY") or os.getenv("REPUBLIC_OPENAI_API_KEY")
 HOST = os.getenv("BUB_HOST", "127.0.0.1")
 PORT = int(os.getenv("BUB_PORT", "8000"))
