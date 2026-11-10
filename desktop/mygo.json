@@ -1,0 +1,6 @@
+{
+  "name": "Bub Desktop",
+  "identifier": "com.bubbuild.bub.desktop",
+  "version": "0.1.0",
+  "out": "build"
+}

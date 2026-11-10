@@ -53,6 +53,18 @@ bub chat
 
 [Run your first conversation](https://bub.build/docs/getting-started/quickstart/#cli) walks through a task in your workspace. To customize the Bub app, see [tools](https://bub.build/docs/app/tools/), [plugins](https://bub.build/docs/app/plugins/), and [packaging](https://bub.build/docs/app/distribution/). For `uv tool install` and other setup options, see [Install Bub](https://bub.build/docs/getting-started/install/#app-install).
 
+## Bub Desktop (experimental)
+
+`desktop/` is a small experiment: a native desktop client for Bub, written in Go
+with the [MyGo](https://mygo.egoist.dev) UI toolkit. It talks to `bub acp`, an
+[Agent Client Protocol](https://agentclientprotocol.com) v1 agent server, over
+stdio — the UI and the agent share no code, only JSON-RPC 2.0.
+
+![Bub Desktop](desktop/screenshot.png)
+
+See [desktop/README.md](desktop/README.md) to run it and
+[desktop/DESIGN.md](desktop/DESIGN.md) for the protocol mapping.
+
 ## Documentation
 
 - [Choose a starting point](https://bub.build/docs/getting-started/)
