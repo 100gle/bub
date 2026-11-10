@@ -1,5 +1,9 @@
 # Bub Desktop — design notes (experiment)
 
+> The planned next step — turning this chat client into an AI-native writing
+> surface (rich text, block-level actions, a standby bar, voice input) — is in
+> [EDITOR_PLAN.md](EDITOR_PLAN.md), with mocks in `design/`.
+
 Bub Desktop is a small experiment: a native desktop chat client for Bub, written in
 Go with the [MyGo](https://mygo.egoist.dev) UI toolkit and connected to a Bub agent
 through the [Agent Client Protocol](https://agentclientprotocol.com) (ACP v1) over

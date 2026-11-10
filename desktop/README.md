@@ -10,7 +10,9 @@ no CGO. The agent is a separate `bub acp` process. The two halves share no code,
 only JSON-RPC 2.0 messages, one per line, over the process's stdin and stdout.
 Anything that speaks ACP could replace either end.
 
-See [DESIGN.md](DESIGN.md) for the contract between the two halves.
+See [DESIGN.md](DESIGN.md) for the contract between the two halves. The planned
+redesign into a block-based, chat-free writing surface is in
+[EDITOR_PLAN.md](EDITOR_PLAN.md).
 
 ```
 ┌──────────────────────────────┐    ACP v1, JSON-RPC 2.0, one per line   ┌───────────────────────────┐
