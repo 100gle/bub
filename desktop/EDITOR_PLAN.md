@@ -128,8 +128,9 @@ open. An outline sidebar (headings) and word count are small additions later.
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-The existing `internal/acp` client stays: `initialize`, `session/new`,
-`session/prompt`, `session/update`, `session/cancel`. One ACP session per open
+The existing `internal/acp` client (a thin adapter over the Go ACP SDK since the
+SDK migration) stays: `initialize`, `session/new`, `session/prompt`,
+`session/update`, `session/cancel`. One ACP session per open
 document (`cwd` = document folder), so each document has its own tape in Bub
 and actions do not bleed into each other.
 

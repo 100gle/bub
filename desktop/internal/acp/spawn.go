@@ -1,14 +1,17 @@
 package acp
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
+
+	sdk "github.com/caelis-labs/acp-go-sdk"
+	"github.com/caelis-labs/acp-go-sdk/transport/stdio"
 )
 
 // Environment variables the app reads to find the agent.
@@ -24,6 +27,10 @@ const (
 // DefaultCommand is what the app runs when BUB_ACP_CMD is unset.
 const DefaultCommand = "bub acp"
 
+// closeGrace is how long Close lets the agent exit on its own after its
+// standard input closes, before the SDK kills its process tree.
+const closeGrace = 2 * time.Second
+
 // Config configures Start.
 type Config struct {
 	// Command is the agent's command line: the executable first, then its
@@ -32,8 +39,8 @@ type Config struct {
 	// Workspace is the agent's working directory and the session's root;
 	// "" inherits the app's.
 	Workspace string
-	// Stderr receives the agent's standard error, which is also kept for
-	// the error banner. Nil tees to os.Stderr.
+	// Stderr receives the agent's standard error, which the SDK drains and
+	// the app also keeps for the error banner. Nil tees to os.Stderr.
 	Stderr io.Writer
 	// Env replaces the agent's environment when not nil.
 	Env []string
@@ -98,23 +105,25 @@ func SplitCommandLine(s string) []string {
 }
 
 // Proc is a spawned agent process and the client that speaks to it: one
-// process, one session, one workspace.
+// process, one session, one workspace. The SDK owns the process tree and the
+// protocol pipes; Proc exposes what the window needs of them.
 type Proc struct {
-	// Client is the ACP connection to the process.
+	// Client is the ACP connection to the process, as the app's model.
 	Client *Client
 
-	cmd       *exec.Cmd
+	process   *stdio.ClientProcess
 	stderr    *tailBuffer
 	exited    chan struct{}
 	mu        sync.Mutex
 	waitErr   error
 	closeOnce sync.Once
+	closeErr  error
 }
 
-// Start spawns the agent command with pipes for ACP on its standard input and
-// output, and the process's standard error forwarded to cfg.Stderr (and kept
-// for the error banner). It returns once the process started; the handshake is
-// the caller's.
+// Start spawns the agent command and connects to it over its standard input
+// and output. The SDK launches the executable directly (no shell), drains its
+// standard error, and owns the process tree. Start returns once the process
+// started; the handshake is the caller's.
 func Start(cfg Config) (*Proc, error) {
 	argv := cfg.Command
 	if len(argv) == 0 {
@@ -123,36 +132,31 @@ func Start(cfg Config) (*Proc, error) {
 	if len(argv) == 0 || argv[0] == "" {
 		return nil, errors.New("acp: no agent command: set " + EnvCommand)
 	}
-	cmd := exec.Command(argv[0], argv[1:]...)
-	cmd.Dir = cfg.Workspace
-	if cfg.Env != nil {
-		cmd.Env = cfg.Env
-	}
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, fmt.Errorf("acp: pipe to %s: %w", argv[0], err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("acp: pipe from %s: %w", argv[0], err)
-	}
 	stderr := newTailBuffer(16 << 10)
 	dest := cfg.Stderr
 	if dest == nil {
 		dest = os.Stderr
 	}
-	cmd.Stderr = io.MultiWriter(dest, stderr)
-	if err := cmd.Start(); err != nil {
+	client := newClient()
+	process, err := stdio.StartClient(context.Background(), client, stdio.Command{
+		Executable: argv[0],
+		Args:       argv[1:],
+		Dir:        cfg.Workspace,
+		Env:        cfg.Env,
+		Stderr:     io.MultiWriter(dest, stderr),
+	}, sdk.ConnectionOptions{})
+	if err != nil {
 		return nil, fmt.Errorf("acp: start %q: %w", strings.Join(argv, " "), err)
 	}
+	client.attach(process.Connection)
 	p := &Proc{
-		Client: NewClient(&pipeConn{Reader: stdout, WriteCloser: stdin}),
-		cmd:    cmd,
-		stderr: stderr,
-		exited: make(chan struct{}),
+		Client:  client,
+		process: process,
+		stderr:  stderr,
+		exited:  make(chan struct{}),
 	}
 	go func() {
-		err := cmd.Wait()
+		err := p.process.Process.Wait(context.Background())
 		p.mu.Lock()
 		p.waitErr = err
 		p.mu.Unlock()
@@ -176,34 +180,16 @@ func (p *Proc) Wait() error {
 // the error banner when it fails.
 func (p *Proc) Stderr() string { return p.stderr.String() }
 
-// Close ends the connection: the agent's standard input closes, so it exits
-// as it does when a terminal asks it to, and a process that has not exited a
-// couple of seconds later is killed. It returns without waiting.
+// Close ends the connection and stops the agent: its standard input closes, it
+// gets closeGrace to exit on its own, and the SDK then kills its process tree.
+// Close waits for that, and returns the SDK's account of it.
 func (p *Proc) Close() error {
-	var err error
 	p.closeOnce.Do(func() {
-		err = p.Client.Close()
-		go func() {
-			select {
-			case <-p.exited:
-			case <-time.After(closeGrace):
-				if p.cmd.Process != nil {
-					_ = p.cmd.Process.Kill()
-				}
-			}
-		}()
+		ctx, cancel := context.WithTimeout(context.Background(), closeGrace)
+		defer cancel()
+		p.closeErr = p.process.Shutdown(ctx)
 	})
-	return err
-}
-
-// closeGrace is how long Close lets an agent exit on its own before killing it.
-const closeGrace = 2 * time.Second
-
-// pipeConn is the ACP connection over a process's pipes: reading its standard
-// output, writing its standard input.
-type pipeConn struct {
-	io.Reader
-	io.WriteCloser
+	return p.closeErr
 }
 
 // tailBuffer keeps the last max bytes written to it, from any goroutine.

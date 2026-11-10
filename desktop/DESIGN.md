@@ -86,8 +86,11 @@ keeps its tape.
 
 - Go module `github.com/bubbuild/bub/desktop` (own module; the repo stays a Python
   project), MyGo `v0.8.3`, native UI only (`ui` package, no webview, no Bun).
-- `internal/acp`: a transport-agnostic ACP client (JSON-RPC framing over any
-  `io.ReadWriteCloser`), so tests can drive it with in-memory pipes.
+- `internal/acp`: a thin adapter over the ACP Go SDK
+  (`github.com/caelis-labs/acp-go-sdk` v1.6.0), which owns the JSON-RPC/typed v1
+  framing and the agent subprocess. The adapter keeps the spawn config, the
+  app-facing `Update` model, and the typed-update mapping; tests drive it over
+  in-memory pipes and against a spawned SDK test agent.
 - The app spawns the agent (`BUB_ACP_CMD`, default `bub acp`), runs
   `initialize` + `session/new {cwd: <process cwd>}`, and shows a chat:
   - markdown replies, streaming (`markdown.Stream`) and finished (`markdown.View`),
@@ -95,7 +98,8 @@ keeps its tape.
   - a Stop button that sends `session/cancel`,
   - an error banner when the agent dies or a request fails.
 - All UI state is updated on the main thread via `win.Update`.
-- Tests: view test with `ui.NewTester`; client test with a scripted fake agent.
+- Tests: view test with `ui.NewTester`; client tests with an SDK fake agent over
+  in-memory pipes and a spawned SDK test agent.
 
 ## How to run
 

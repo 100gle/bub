@@ -1,73 +1,60 @@
 package acp
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"sync"
-	"sync/atomic"
+	"time"
+
+	sdk "github.com/caelis-labs/acp-go-sdk"
 )
 
-// ErrClosed is reported by calls made or in flight when the connection ends,
-// as when the agent process exits.
-var ErrClosed = errors.New("acp: agent connection closed")
+// cancelTimeout bounds sending session/cancel, so a wedged agent cannot leak
+// the goroutine that stops a turn.
+const cancelTimeout = 5 * time.Second
 
-// maxLine bounds one JSON-RPC message; a longer line ends the connection
-// rather than growing without limit.
-const maxLine = 16 << 20
-
-// Client speaks ACP over an io.ReadWriteCloser. It reads messages in a
-// goroutine of its own: responses go to the call waiting for them, and
-// session/update notifications go to the update handler.
-//
-// A Client handles one transport. Start builds one around a spawned agent
-// process; NewClient takes any connection, as tests take in-memory pipes.
+// Client is the window's view of the ACP connection: a thin adapter that the
+// SDK drives as its acp.Client, with the app-facing calls the window makes on
+// top. It implements only the two baseline client methods; the filesystem,
+// terminal and permission-request capabilities stay unimplemented, which the
+// SDK answers with JSON-RPC "method not found" (-32601) so an agent asking for
+// one never waits.
 type Client struct {
-	conn      io.ReadWriteCloser
-	wmu       sync.Mutex // serializes writes: one JSON-RPC message per line
-	nextID    atomic.Int64
 	mu        sync.Mutex
-	pending   map[int64]chan *wireMessage
+	conn      *sdk.ClientSideConnection
 	onUpdate  func(Update)
 	onClose   func(error)
-	logger    *log.Logger
-	closed    chan struct{}
+	failed    bool
+	closedErr error
 	closeOnce sync.Once
-	readErr   error
 }
 
-// NewClient starts a client on conn. The connection is read until it ends,
-// which closes the client; Close closes it sooner.
-func NewClient(conn io.ReadWriteCloser) *Client {
-	c := &Client{
-		conn:    conn,
-		pending: make(map[int64]chan *wireMessage),
-		logger:  log.New(io.Discard, "", 0),
-		closed:  make(chan struct{}),
-	}
-	go c.readLoop()
-	return c
-}
+func newClient() *Client { return &Client{} }
 
-// SetLogger sets where the client logs malformed lines and other trouble;
-// the default discards them. It must be called before messages arrive.
-func (c *Client) SetLogger(l *log.Logger) {
-	if l == nil {
-		l = log.New(io.Discard, "", 0)
-	}
+// The adapter is the SDK's baseline client: permission requests and session
+// updates, and nothing else.
+var _ sdk.Client = (*Client)(nil)
+
+// attach wires the SDK connection in and watches it: when it ends, for a clean
+// close or a dead agent, the close handler hears why once.
+func (c *Client) attach(conn *sdk.ClientSideConnection) {
 	c.mu.Lock()
-	c.logger = l
+	c.conn = conn
 	c.mu.Unlock()
+	go func() {
+		<-conn.Done()
+		c.fail(conn.Err())
+	}()
 }
 
-// SetUpdateHandler sets what receives session/update notifications. The
-// handler runs on the client's read goroutine: run UI work on the main thread
-// (mygo.Window.Update) rather than here.
+// SetUpdateHandler sets what receives session updates, as the app's model.
+// The handler runs on the SDK's notification goroutine: the window queues
+// win.Update from it rather than touching state here.
 func (c *Client) SetUpdateHandler(fn func(Update)) {
 	c.mu.Lock()
 	c.onUpdate = fn
@@ -75,220 +62,297 @@ func (c *Client) SetUpdateHandler(fn func(Update)) {
 }
 
 // SetCloseHandler sets what hears that the connection ended, once, with the
-// reason.
+// reason (ErrClosed when the agent simply went away). A handler set after the
+// connection already ended hears at once, so a process that dies between the
+// handshake and installing the handler cannot leave the window "ready".
 func (c *Client) SetCloseHandler(fn func(error)) {
 	c.mu.Lock()
 	c.onClose = fn
+	failed, err := c.failed, c.closedErr
 	c.mu.Unlock()
-}
-
-// Close ends the connection: the agent sees its standard input close and is
-// expected to exit. Calls in flight fail with ErrClosed.
-func (c *Client) Close() error {
-	err := c.conn.Close()
-	c.fail(ErrClosed)
-	return err
-}
-
-// Call sends a request and waits for its response, or for ctx to end. out,
-// when not nil, receives the result.
-func (c *Client) Call(ctx context.Context, method string, params any, out any) error {
-	id, ch, err := c.dispatchRequest(method, params)
-	if err != nil {
-		return err
-	}
-	select {
-	case msg, ok := <-ch:
-		if !ok {
-			return c.closedError(method)
-		}
-		if msg.Error != nil {
-			return msg.Error
-		}
-		if out != nil && len(msg.Result) > 0 {
-			if err := json.Unmarshal(msg.Result, out); err != nil {
-				return fmt.Errorf("acp: %s: decode result: %w", method, err)
-			}
-		}
-		return nil
-	case <-ctx.Done():
-		c.forget(id)
-		return fmt.Errorf("acp: %s: %w", method, ctx.Err())
-	case <-c.closed:
-		return c.closedError(method)
+	if failed && fn != nil {
+		fn(err)
 	}
 }
 
-// notify sends a notification: a message that expects no response.
-func (c *Client) notify(method string, params any) error {
-	return c.writeJSON(notification{JSONRPC: "2.0", Method: method, Params: params})
-}
-
-func (c *Client) dispatchRequest(method string, params any) (int64, chan *wireMessage, error) {
-	id := c.nextID.Add(1)
-	ch := make(chan *wireMessage, 1)
+// SetLogger sends the SDK's own diagnostics to l, at warning level.
+func (c *Client) SetLogger(l *log.Logger) {
+	if l == nil {
+		l = log.New(io.Discard, "", 0)
+	}
 	c.mu.Lock()
-	if c.pending == nil { // already closed
-		c.mu.Unlock()
-		return 0, nil, c.closedError(method)
-	}
-	c.pending[id] = ch
+	conn := c.conn
 	c.mu.Unlock()
-	if err := c.writeJSON(request{JSONRPC: "2.0", ID: id, Method: method, Params: params}); err != nil {
-		c.forget(id)
-		return 0, nil, fmt.Errorf("acp: %s: %w", method, err)
-	}
-	return id, ch, nil
-}
-
-func (c *Client) forget(id int64) {
-	c.mu.Lock()
-	delete(c.pending, id)
-	c.mu.Unlock()
-}
-
-func (c *Client) closedError(method string) error {
-	c.mu.Lock()
-	err := c.readErr
-	c.mu.Unlock()
-	if err == nil {
-		err = ErrClosed
-	}
-	return fmt.Errorf("acp: %s: %w", method, err)
-}
-
-func (c *Client) writeJSON(v any) error {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
-	}
-	data = append(data, '\n')
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	if _, err := c.conn.Write(data); err != nil {
-		return fmt.Errorf("write: %w", err)
-	}
-	return nil
-}
-
-func (c *Client) logf(format string, args ...any) {
-	c.mu.Lock()
-	logger := c.logger
-	c.mu.Unlock()
-	logger.Printf(format, args...)
-}
-
-func (c *Client) readLoop() {
-	scanner := bufio.NewScanner(c.conn)
-	scanner.Buffer(make([]byte, 0, 64*1024), maxLine)
-	for scanner.Scan() {
-		line := bytes.TrimSpace(scanner.Bytes())
-		if len(line) == 0 {
-			continue
-		}
-		c.handleLine(line)
-	}
-	err := scanner.Err()
-	if err == nil {
-		err = io.EOF
-	}
-	c.fail(err)
-}
-
-func (c *Client) handleLine(line []byte) {
-	var msg wireMessage
-	if err := json.Unmarshal(line, &msg); err != nil {
-		c.logf("acp: skipping malformed line: %v", err)
-		return
-	}
-	hasID := len(msg.ID) > 0 && string(msg.ID) != "null"
-	switch {
-	case msg.Method != "" && hasID: // a request from the agent
-		c.answerRequest(msg)
-	case msg.Method != "": // a notification
-		c.handleNotification(msg)
-	case hasID: // a response
-		c.handleResponse(msg)
-	default:
-		c.logf("acp: skipping message with neither method nor id")
+	if conn != nil {
+		conn.SetLogger(slog.New(slog.NewTextHandler(l.Writer(), &slog.HandlerOptions{Level: slog.LevelWarn})))
 	}
 }
 
-// answerRequest replies to a request the client does not implement with
-// "method not found", so that an agent waiting for the answer carries on
-// instead of hanging. Bub asks for none of them today; fs/*, terminal/* and
-// session/request_permission would arrive here if it did.
-func (c *Client) answerRequest(msg wireMessage) {
-	c.logf("acp: answering unimplemented request %s with -32601", msg.Method)
-	resp := response{
-		JSONRPC: "2.0",
-		ID:      msg.ID,
-		Error: &RPCError{
-			Code:    ErrCodeMethodNotFound,
-			Message: msg.Method + " is not implemented by bub-desktop",
-		},
-	}
-	if err := c.writeJSON(resp); err != nil {
-		c.logf("acp: answering %s: %v", msg.Method, err)
-	}
+// RequestPermission answers a permission request by declining it: this build
+// has no permissions UI, so a tool that needs consent does not run.
+func (c *Client) RequestPermission(context.Context, sdk.RequestPermissionRequest) (sdk.RequestPermissionResponse, error) {
+	return sdk.RequestPermissionResponse{Outcome: sdk.NewRequestPermissionOutcomeCancelled()}, nil
 }
 
-func (c *Client) handleNotification(msg wireMessage) {
-	if msg.Method != "session/update" {
-		c.logf("acp: ignoring notification %s", msg.Method)
-		return
-	}
-	update, err := parseSessionNotification(msg.Params)
-	if err != nil {
-		c.logf("acp: skipping session/update: %v", err)
-		return
-	}
+// SessionUpdate maps one typed SDK notification onto the app's Update model.
+func (c *Client) SessionUpdate(_ context.Context, notification sdk.SessionNotification) error {
+	update := mapSessionUpdate(notification)
 	c.mu.Lock()
 	handler := c.onUpdate
 	c.mu.Unlock()
 	if handler != nil {
 		handler(update)
 	}
+	return nil
 }
 
-func (c *Client) handleResponse(msg wireMessage) {
-	var id int64
-	if err := json.Unmarshal(msg.ID, &id); err != nil {
-		c.logf("acp: skipping response with unusable id %s", msg.ID)
-		return
+// Initialize negotiates the protocol and reports what the agent can do. The
+// client advertises no capabilities: Bub's tools act on the workspace
+// themselves, so nothing is delegated to the window.
+func (c *Client) Initialize(ctx context.Context, clientInfo Implementation) (*InitializeResult, error) {
+	conn, err := c.connection()
+	if err != nil {
+		return nil, err
 	}
-	c.mu.Lock()
-	ch := c.pending[id]
-	delete(c.pending, id)
-	c.mu.Unlock()
-	if ch == nil {
-		c.logf("acp: response for unknown request %d", id)
-		return
+	info := &sdk.Implementation{Name: clientInfo.Name, Version: clientInfo.Version}
+	if clientInfo.Title != "" {
+		info.Title = sdk.Ptr(clientInfo.Title)
 	}
-	ch <- &msg
-}
-
-// fail ends the client once, with the reason the connection ended.
-func (c *Client) fail(err error) {
-	c.closeOnce.Do(func() {
-		c.mu.Lock()
-		switch {
-		case err == nil, errors.Is(err, io.EOF), errors.Is(err, ErrClosed):
-			c.readErr = ErrClosed
-		default:
-			c.readErr = fmt.Errorf("acp: connection ended: %w", err)
+	res, err := conn.Initialize(ctx, sdk.InitializeRequest{
+		ProtocolVersion: sdk.ProtocolVersion(ProtocolVersion),
+		ClientInfo:      info,
+	})
+	if err != nil {
+		return nil, c.callError("initialize", err)
+	}
+	if int(res.ProtocolVersion) != ProtocolVersion {
+		return nil, fmt.Errorf("acp: agent speaks protocol version %d, this client speaks %d", int(res.ProtocolVersion), ProtocolVersion)
+	}
+	out := &InitializeResult{ProtocolVersion: int(res.ProtocolVersion)}
+	if res.AgentInfo != nil {
+		out.AgentInfo = &Implementation{
+			Name:    res.AgentInfo.Name,
+			Version: res.AgentInfo.Version,
 		}
-		pending := c.pending
-		c.pending = nil
-		readErr := c.readErr
+		if res.AgentInfo.Title != nil {
+			out.AgentInfo.Title = *res.AgentInfo.Title
+		}
+	}
+	return out, nil
+}
+
+// NewSession creates a session rooted at cwd, which must be absolute, with no
+// MCP servers.
+func (c *Client) NewSession(ctx context.Context, cwd string) (*SessionResult, error) {
+	conn, err := c.connection()
+	if err != nil {
+		return nil, err
+	}
+	res, err := conn.NewSession(ctx, sdk.NewSessionRequest{
+		Cwd:        cwd,
+		McpServers: []sdk.McpServer{},
+	})
+	if err != nil {
+		return nil, c.callError("session/new", err)
+	}
+	if res.SessionId == "" {
+		return nil, fmt.Errorf("acp: session/new: agent returned no session id")
+	}
+	return &SessionResult{SessionID: string(res.SessionId)}, nil
+}
+
+// Prompt sends one user message and returns the reason the agent stopped the
+// turn. The agent streams its answer through the update handler while this
+// call waits, so pass a ctx without a deadline for a turn the user stops with
+// Cancel.
+func (c *Client) Prompt(ctx context.Context, sessionID string, prompt []ContentBlock) (string, error) {
+	conn, err := c.connection()
+	if err != nil {
+		return "", err
+	}
+	if sessionID == "" {
+		return "", errors.New("acp: prompt: no session")
+	}
+	if len(prompt) == 0 {
+		return "", errors.New("acp: prompt: no content")
+	}
+	res, err := conn.Prompt(ctx, sdk.PromptRequest{
+		SessionId: sdk.SessionId(sessionID),
+		Prompt:    prompt,
+	})
+	if err != nil {
+		return "", c.callError("session/prompt", err)
+	}
+	switch res.StopReason {
+	case sdk.StopReasonEndTurn, sdk.StopReasonMaxTokens, sdk.StopReasonMaxTurnRequests,
+		sdk.StopReasonRefusal, sdk.StopReasonCancelled:
+		return string(res.StopReason), nil
+	case "":
+		return StopUnknown, errors.New("acp: session/prompt: agent returned no stop reason")
+	default:
+		return StopUnknown, nil
+	}
+}
+
+// Cancel asks the agent to stop the turn running in a session. It is a
+// notification: the prompt call answers with the "cancelled" stop reason.
+func (c *Client) Cancel(sessionID string) error {
+	conn, err := c.connection()
+	if err != nil {
+		return err
+	}
+	if sessionID == "" {
+		return errors.New("acp: cancel: no session")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cancelTimeout)
+	defer cancel()
+	return c.callError("session/cancel", conn.Cancel(ctx, sdk.CancelNotification{SessionId: sdk.SessionId(sessionID)}))
+}
+
+// connection returns the SDK connection, or ErrClosed before the process
+// started and after it ended.
+func (c *Client) connection() (*sdk.ClientSideConnection, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conn == nil {
+		return nil, ErrClosed
+	}
+	return c.conn, nil
+}
+
+// callError labels a failed call and folds the SDK's connection errors into
+// ErrClosed, which the app treats as "the agent went away" rather than a
+// failed turn.
+func (c *Client) callError(method string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, sdk.ErrConnectionClosed) || errors.Is(err, sdk.ErrPeerClosed) {
+		return fmt.Errorf("acp: %s: %w", method, ErrClosed)
+	}
+	return fmt.Errorf("acp: %s: %w", method, err)
+}
+
+// fail tells the close handler once why the connection ended.
+func (c *Client) fail(cause error) {
+	c.closeOnce.Do(func() {
+		err := ErrClosed
+		if cause != nil && !errors.Is(cause, sdk.ErrConnectionClosed) && !errors.Is(cause, sdk.ErrPeerClosed) {
+			err = fmt.Errorf("acp: connection ended: %w", cause)
+		}
+		c.mu.Lock()
+		c.failed = true
+		c.closedErr = err
 		handler := c.onClose
 		c.mu.Unlock()
-		for _, ch := range pending {
-			close(ch)
-		}
-		close(c.closed)
 		if handler != nil {
-			handler(readErr)
+			handler(err)
 		}
 	})
+}
+
+// mapSessionUpdate flattens one typed SDK notification into the app's Update.
+// Kinds the window does not draw keep their name and nothing else, so it can
+// ignore them.
+func mapSessionUpdate(n sdk.SessionNotification) Update {
+	u := Update{SessionID: string(n.SessionId)}
+	update := n.Update
+	switch {
+	case update.AgentMessageChunk != nil:
+		u.Type = UpdateAgentMessageChunk
+		u.Text = contentText(update.AgentMessageChunk.Content)
+		u.MessageID = messageID(update.AgentMessageChunk.MessageId)
+	case update.AgentThoughtChunk != nil:
+		u.Type = UpdateAgentThoughtChunk
+		u.Text = contentText(update.AgentThoughtChunk.Content)
+		u.MessageID = messageID(update.AgentThoughtChunk.MessageId)
+	case update.UserMessageChunk != nil:
+		u.Type = UpdateUserMessageChunk
+		u.Text = contentText(update.UserMessageChunk.Content)
+		u.MessageID = messageID(update.UserMessageChunk.MessageId)
+	case update.ToolCall != nil:
+		u.Type = UpdateToolCall
+		u.ToolCall = mapToolCall(update.ToolCall)
+	case update.ToolCallUpdate != nil:
+		u.Type = UpdateToolCallUpdate
+		u.ToolCallUpdate = mapToolCallUpdate(update.ToolCallUpdate)
+	case update.Plan != nil:
+		u.Type = UpdatePlan
+	case update.AvailableCommandsUpdate != nil:
+		u.Type = UpdateAvailableCommands
+	case update.CurrentModeUpdate != nil:
+		u.Type = UpdateCurrentMode
+	case update.SessionInfoUpdate != nil:
+		u.Type = UpdateSessionInfoUpdate
+	default:
+		u.Type = UpdateUnknown
+	}
+	return u
+}
+
+func mapToolCall(call *sdk.SessionUpdateToolCall) *ToolCall {
+	return &ToolCall{
+		ToolCallID: string(call.ToolCallId),
+		Title:      call.Title,
+		Name:       stringValue(call.Name),
+		Kind:       string(call.Kind),
+		Status:     string(call.Status),
+		RawInput:   rawValue(call.RawInput),
+		RawOutput:  rawValue(call.RawOutput),
+	}
+}
+
+func mapToolCallUpdate(update *sdk.SessionToolCallUpdate) *ToolCallUpdate {
+	return &ToolCallUpdate{
+		ToolCallID: string(update.ToolCallId),
+		Title:      update.Title,
+		Name:       update.Name,
+		Kind:       stringPointer(update.Kind),
+		Status:     stringPointer(update.Status),
+		RawInput:   rawValue(update.RawInput),
+		RawOutput:  rawValue(update.RawOutput),
+	}
+}
+
+// contentText is the text of a content block, "" for blocks of other kinds.
+func contentText(block sdk.ContentBlock) string {
+	if block.Text == nil {
+		return ""
+	}
+	return block.Text.Text
+}
+
+func messageID(id *sdk.MessageId) string {
+	if id == nil {
+		return ""
+	}
+	return string(*id)
+}
+
+func stringValue(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func stringPointer[T ~string](s *T) *string {
+	if s == nil {
+		return nil
+	}
+	value := string(*s)
+	return &value
+}
+
+// rawValue is the JSON the SDK carried for a raw field, so the row's preview
+// shows what the agent sent.
+func rawValue(value any) json.RawMessage {
+	if value == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	return data
 }

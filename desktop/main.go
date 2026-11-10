@@ -653,12 +653,15 @@ func (a *app) reconnect() {
 	a.connect()
 }
 
-// shutdown stops the agent when the window closes.
+// shutdown stops the agent when the window closes. Close gives the agent a
+// grace period to exit after its standard input closes, so it runs off the main
+// thread: quitting the window should not wait on it.
 func (a *app) shutdown() {
 	a.gen++
 	if a.proc != nil {
-		_ = a.proc.Close()
+		proc := a.proc
 		a.proc = nil
+		go func() { _ = proc.Close() }()
 	}
 	a.client = nil
 }
