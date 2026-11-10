@@ -92,14 +92,26 @@ keeps its tape.
   app-facing `Update` model, and the typed-update mapping; tests drive it over
   in-memory pipes and against a spawned SDK test agent.
 - The app spawns the agent (`BUB_ACP_CMD`, default `bub acp`), runs
-  `initialize` + `session/new {cwd: <process cwd>}`, and shows a chat:
-  - markdown replies, streaming (`markdown.Stream`) and finished (`markdown.View`),
-  - tool calls as compact rows with a status (`pending` / `in_progress` / `completed` / `failed`),
-  - a Stop button that sends `session/cancel`,
-  - an error banner when the agent dies or a request fails.
+  `initialize` + `session/new {cwd: <process cwd>}`, and shows a **Markdown
+  editor**, not a chat (the implementation is `view.go` and `editor.go`; the
+  design proposal is [EDITOR_PLAN.md](EDITOR_PLAN.md)):
+  - one centered writing column (`richtext.EditorBase`), a block gutter, a header
+    with the document name, dirty marker, word count and connection chip, and a
+    footer of keys; no message list, bubbles or Send;
+  - `⌘K` on the caret's block, or the `✦` in the gutter, opens a block action bar
+    (Rewrite, Shorten, Expand, Continue, Translate, Ask…); one `session/prompt`
+    per action carries the instruction, the block and its neighbouring
+    paragraphs, and asks for replacement text only;
+  - `agent_message_chunk` notifications stream into an inline suggestion card
+    with Accept (one `Document.Edit` undo step, resolved by paragraph ID and
+    refused when the block changed), Regenerate, Dismiss and Stop
+    (`session/cancel`); tool calls and thoughts only set a small activity label;
+  - New/Open/Save read and write Markdown through native dialogs
+    (`mygo.Dialog`), and an error banner with Retry covers agent failures.
 - All UI state is updated on the main thread via `win.Update`.
-- Tests: view test with `ui.NewTester`; client tests with an SDK fake agent over
-  in-memory pipes and a spawned SDK test agent.
+- Tests: prompt and action-engine tests plus `ui.NewTester` view tests in
+  `main_test.go`; client tests with an SDK fake agent over in-memory pipes and a
+  spawned SDK test agent.
 
 ## How to run
 
@@ -119,8 +131,9 @@ Use `--workspace` on the agent or the app's cwd to choose the project the agent 
 - `uv run pytest tests/test_acp.py -q` plus the existing suite.
 - `go build ./...`, `go test ./...`, `go vet ./...` in `desktop/`.
 - End-to-end: launch the desktop app against `uv run bub acp` with the repo's
-  real model settings, send a prompt, screenshot the window through MyGo's
-  automation plugin.
+  real model settings, put the caret in a paragraph, press `⌘K`, run Rewrite,
+  accept the streamed suggestion, and save the Markdown; screenshot the window
+  through MyGo's automation plugin.
 
 What was actually run on this branch (`feat/bub-desktop-mygo`):
 
@@ -131,6 +144,9 @@ What was actually run on this branch (`feat/bub-desktop-mygo`):
   `session/prompt` streamed `agent_message_chunk`s and returned `end_turn`; a
   turn using `fs.read` produced `tool_call` + `tool_call_update`; `session/cancel`
   returned `cancelled`.
-- End-to-end through the built window (`-tags e2e`, `MYGO_AUTOMATION`):
-  automation typed a prompt through the `composer` key, pressed `send`, saw the
-  tool row and the Markdown reply, and captured `screenshot.png`.
+- Editor UI: headless `ui.Render` snapshots of the empty, writing, action-bar,
+  ask, suggestion, streaming, docked and error states were inspected;
+  `screenshot.png` is a render of the suggestion state. The automation keys for
+  the editor, file actions, block actions and suggestion card are listed in
+  `README.md`; a real-model end-to-end run through `MYGO_AUTOMATION` is the
+  remaining acceptance step.

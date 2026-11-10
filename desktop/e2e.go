@@ -13,9 +13,13 @@
 //
 // The plugin listens only when MYGO_AUTOMATION names a socket path, and it is
 // left out of release builds. The elements worth driving carry stable keys:
-// the composer is keyed by Context.Key("composer"), and the Send, Stop, error
-// banner and status chip by Key("send"), Key("stop"), Key("error") and
-// Key("status").
+// the editor is keyed by Context.Key("editor"); the header holds Key("status")
+// for the agent chip, Key("error") for the error banner, and Key("file-new"),
+// Key("file-open"), Key("file-save") for the file actions; each visible
+// paragraph's gutter mark is Key("ai-block-<index>"); the action bar buttons
+// are Key("ai-rewrite") and its siblings, with Key("ai-instruction") and
+// Key("ai-generate") for Ask…; and the suggestion card holds Key("ai-accept"),
+// Key("ai-regenerate"), Key("ai-dismiss") and Key("ai-stop").
 package main
 
 import (

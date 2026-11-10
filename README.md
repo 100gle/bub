@@ -55,15 +55,20 @@ bub chat
 
 ## Bub Desktop (experimental)
 
-`desktop/` is a small experiment: a native desktop client for Bub, written in Go
-with the [MyGo](https://mygo.egoist.dev) UI toolkit. It talks to `bub acp`, an
+`desktop/` is a small experiment: a native Markdown editor where the agent edits
+blocks inline instead of chatting. Written in Go with the
+[MyGo](https://mygo.egoist.dev) UI toolkit, it talks to `bub acp`, an
 [Agent Client Protocol](https://agentclientprotocol.com) v1 agent server, over
-stdio — the UI and the agent share no code, only JSON-RPC 2.0.
+stdio — the UI and the agent share no code, only JSON-RPC 2.0. Put the caret in
+a paragraph, press `⌘K`, and accept or dismiss the rewritten suggestion; there
+is no chat transcript.
 
 ![Bub Desktop](desktop/screenshot.png)
 
-See [desktop/README.md](desktop/README.md) to run it and
-[desktop/DESIGN.md](desktop/DESIGN.md) for the protocol mapping.
+See [desktop/README.md](desktop/README.md) to run it,
+[desktop/DESIGN.md](desktop/DESIGN.md) for the protocol mapping, and
+[desktop/EDITOR_PLAN.md](desktop/EDITOR_PLAN.md) for the design and the remaining
+phases (standby bar, voice, multi-document).
 
 ## Documentation
 

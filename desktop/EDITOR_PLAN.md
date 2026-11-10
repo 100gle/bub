@@ -1,7 +1,9 @@
 # Bub Desktop: from chat client to an AI-native writing surface
 
-Status: proposal, not implemented. This document redesigns `desktop/` from the
-current ACP chat window into a rich-text editor where a person and an agent
+Status: MVP implemented in `desktop/` (editor, block actions, inline
+suggestions, Markdown open/save); the standby bar, voice and multi-document
+phases below are not built yet. This document redesigns `desktop/` from the
+previous ACP chat window into a rich-text editor where a person and an agent
 write in the same document, with **no chat pane**. The agent is present the way
 a good writing tool is: at the block, at the caret, and behind a wake shortcut.
 
