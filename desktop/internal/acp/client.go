@@ -107,8 +107,9 @@ func (c *Client) SessionUpdate(_ context.Context, notification sdk.SessionNotifi
 }
 
 // Initialize negotiates the protocol and reports what the agent can do. The
-// client advertises no capabilities: Bub's tools act on the workspace
-// themselves, so nothing is delegated to the window.
+// client advertises only the session config options extension: it can show
+// the agent's model and thinking selectors, including boolean ones, while
+// Bub's tools still act on the workspace themselves.
 func (c *Client) Initialize(ctx context.Context, clientInfo Implementation) (*InitializeResult, error) {
 	conn, err := c.connection()
 	if err != nil {
@@ -118,9 +119,17 @@ func (c *Client) Initialize(ctx context.Context, clientInfo Implementation) (*In
 	if clientInfo.Title != "" {
 		info.Title = sdk.Ptr(clientInfo.Title)
 	}
+	caps := sdk.ClientCapabilities{
+		Session: &sdk.ClientSessionCapabilities{
+			ConfigOptions: &sdk.SessionConfigOptionsCapabilities{
+				Boolean: &sdk.BooleanConfigOptionCapabilities{},
+			},
+		},
+	}
 	res, err := conn.Initialize(ctx, sdk.InitializeRequest{
-		ProtocolVersion: sdk.ProtocolVersion(ProtocolVersion),
-		ClientInfo:      info,
+		ProtocolVersion:    sdk.ProtocolVersion(ProtocolVersion),
+		ClientInfo:         info,
+		ClientCapabilities: caps,
 	})
 	if err != nil {
 		return nil, c.callError("initialize", err)
@@ -129,6 +138,9 @@ func (c *Client) Initialize(ctx context.Context, clientInfo Implementation) (*In
 		return nil, fmt.Errorf("acp: agent speaks protocol version %d, this client speaks %d", int(res.ProtocolVersion), ProtocolVersion)
 	}
 	out := &InitializeResult{ProtocolVersion: int(res.ProtocolVersion)}
+	if res.AgentCapabilities.PromptCapabilities.Image {
+		out.PromptImage = true
+	}
 	if res.AgentInfo != nil {
 		out.AgentInfo = &Implementation{
 			Name:    res.AgentInfo.Name,
@@ -158,7 +170,65 @@ func (c *Client) NewSession(ctx context.Context, cwd string) (*SessionResult, er
 	if res.SessionId == "" {
 		return nil, fmt.Errorf("acp: session/new: agent returned no session id")
 	}
-	return &SessionResult{SessionID: string(res.SessionId)}, nil
+	return &SessionResult{
+		SessionID:     string(res.SessionId),
+		ConfigOptions: mapConfigOptions(res.ConfigOptions),
+	}, nil
+}
+
+// SetConfigOption changes a select session configuration option, such as the
+// model or the thinking level, and returns the full set of options with their
+// new current values. An agent that does not advertise config options answers
+// "method not found".
+func (c *Client) SetConfigOption(ctx context.Context, sessionID, optionID, value string) ([]ConfigOption, error) {
+	conn, err := c.connection()
+	if err != nil {
+		return nil, err
+	}
+	if sessionID == "" {
+		return nil, errors.New("acp: set config option: no session")
+	}
+	if optionID == "" {
+		return nil, errors.New("acp: set config option: no option")
+	}
+	res, err := conn.SetSessionConfigOption(ctx, sdk.SetSessionConfigOptionRequest{
+		ValueId: &sdk.SetSessionConfigOptionValueId{
+			SessionId: sdk.SessionId(sessionID),
+			ConfigId:  sdk.SessionConfigId(optionID),
+			Value:     sdk.SessionConfigValueId(value),
+		},
+	})
+	if err != nil {
+		return nil, c.callError("session/set_config_option", err)
+	}
+	return mapConfigOptions(res.ConfigOptions), nil
+}
+
+// SetConfigOptionBool changes a boolean session configuration option and
+// returns the full set of options with their new current values.
+func (c *Client) SetConfigOptionBool(ctx context.Context, sessionID, optionID string, value bool) ([]ConfigOption, error) {
+	conn, err := c.connection()
+	if err != nil {
+		return nil, err
+	}
+	if sessionID == "" {
+		return nil, errors.New("acp: set config option bool: no session")
+	}
+	if optionID == "" {
+		return nil, errors.New("acp: set config option bool: no option")
+	}
+	res, err := conn.SetSessionConfigOption(ctx, sdk.SetSessionConfigOptionRequest{
+		Boolean: &sdk.SetSessionConfigOptionBoolean{
+			SessionId: sdk.SessionId(sessionID),
+			ConfigId:  sdk.SessionConfigId(optionID),
+			Type:      ConfigKindBoolean,
+			Value:     value,
+		},
+	})
+	if err != nil {
+		return nil, c.callError("session/set_config_option", err)
+	}
+	return mapConfigOptions(res.ConfigOptions), nil
 }
 
 // Prompt sends one user message and returns the reason the agent stopped the
@@ -280,6 +350,8 @@ func mapSessionUpdate(n sdk.SessionNotification) Update {
 		u.Type = UpdatePlan
 	case update.AvailableCommandsUpdate != nil:
 		u.Type = UpdateAvailableCommands
+		u.Commands = mapAvailableCommands(update.AvailableCommandsUpdate)
+		u.CommandPrefix = metaString(update.AvailableCommandsUpdate.Meta, "commandPrefix")
 	case update.CurrentModeUpdate != nil:
 		u.Type = UpdateCurrentMode
 	case update.SessionInfoUpdate != nil:
@@ -288,6 +360,39 @@ func mapSessionUpdate(n sdk.SessionNotification) Update {
 		u.Type = UpdateUnknown
 	}
 	return u
+}
+
+// mapAvailableCommands flattens the SDK's available commands into the menu
+// entries the composer draws. The SDK already dropped entries it cannot parse,
+// so a newer agent's unknown fields do not break the menu.
+func mapAvailableCommands(update *sdk.SessionAvailableCommandsUpdate) []AvailableCommand {
+	if update == nil || len(update.AvailableCommands) == 0 {
+		return nil
+	}
+	commands := make([]AvailableCommand, 0, len(update.AvailableCommands))
+	for _, command := range update.AvailableCommands {
+		mapped := AvailableCommand{Name: command.Name, Description: command.Description}
+		if command.Input != nil && command.Input.Unstructured != nil {
+			mapped.Hint = command.Input.Unstructured.Hint
+		}
+		mapped.Kind = metaString(command.Meta, "kind")
+		commands = append(commands, mapped)
+	}
+	return commands
+}
+
+// metaString decodes a metadata value as a JSON string, "" when the key is
+// absent or does not hold a string.
+func metaString(meta map[string]json.RawMessage, key string) string {
+	raw, ok := meta[key]
+	if !ok {
+		return ""
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return ""
+	}
+	return value
 }
 
 func mapToolCall(call *sdk.SessionUpdateToolCall) *ToolCall {

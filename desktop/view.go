@@ -2,501 +2,460 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/richtext"
 )
 
-// view builds the window: a quiet header, the writing column with its block
-// gutter and AI surfaces, and a footer of keys. There is no chat.
+// railWidth is the width of the chat or contents rail.
+const railWidth = 288
+
+// view is the window: the sidebar of pages and AI chats, the page in the
+// middle, and the rail of chat or contents on the right. The page is the
+// document; everything else is quiet chrome around it.
 func (a *app) view(c *ui.Context) {
-	c.SetTheme(a.theme)
+	a.applyTheme(c)
+	a.handleShortcuts(c)
+
+	ui.Row(c).Fill().Background(c.Theme().Background).Children(func() {
+		if a.sidebarShown {
+			a.sidebarWidth = clamp(a.sidebarWidth, 208, 340)
+			ui.Split(c, &a.sidebarWidth, func() { a.sidebar(c) }, func() { a.mainArea(c) }).Fill()
+			return
+		}
+		a.mainArea(c)
+	})
+}
+
+// mainArea is the page or the settings, with the rail when it fits.
+func (a *app) mainArea(c *ui.Context) {
+	width, _ := c.Size()
+	showRail := a.railShown && width >= 1040
+	ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
+		ui.Column(c).Grow(1).FillHeight().MinWidth(0).Children(func() {
+			a.header(c)
+			switch a.mode {
+			case viewSettings:
+				a.settingsView(c)
+			case viewChat:
+				a.chatPage(c)
+			default:
+				a.pageView(c)
+			}
+		})
+		if showRail {
+			a.rail(c)
+		}
+	})
+}
+
+// header is the page's name in the workspace and the few actions the window
+// has: the sidebar, contents, and whether the page is saved.
+func (a *app) header(c *ui.Context) {
 	t := c.Theme()
+	ui.Row(c).Height(tokens.HeaderHeight).Padding(0, tokens.Space4).Gap(tokens.Space2).AlignItems(ui.Center).
+		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
+		label := "Hide sidebar"
+		if !a.sidebarShown {
+			label = "Show sidebar"
+		}
+		if iconButton(c, "sidebar-toggle", icoSidebar, label, chromeIcon, false, true, true) {
+			a.toggleSidebar()
+		}
+		if a.mode == viewSettings {
+			if iconButton(c, "settings-back", icoChevronLeft, "Back to page", chromeIcon, false, true, true) {
+				a.closeSettings()
+			}
+			ui.Text(c, "Settings").FontSize(tokens.FontBody).FontWeight(tokens.WeightStrong).TextColor(t.Text).SingleLine()
+			ui.Spacer(c)
+			return
+		}
+		if a.mode == viewChat {
+			if iconButton(c, "chat-back", icoChevronLeft, "Back to page", chromeIcon, false, true, true) {
+				a.closeChat()
+			}
+			ui.Text(c, chatTitle(a.chat)).FontSize(tokens.FontBody).
+				FontWeight(tokens.WeightStrong).TextColor(t.Text).SingleLine().MaxWidth(280)
+			// The header names the context the conversation reads; the chat
+			// is not tied to a page, so there is no page to show otherwise.
+			if refs := a.chatReferenceSummary(a.chat); refs != "" {
+				ui.Icon(c, icoChevron).Size(12, 12).TextColor(t.TextMuted)
+				ui.Text(c, refs).FontSize(tokens.FontBody).TextColor(t.TextMuted).
+					SingleLine().MaxWidth(220)
+			}
+			ui.Spacer(c)
+			if iconButton(c, "chat-page-new", icoPlus, "New chat", chromeIcon, false, true, true) {
+				a.newChat()
+			}
+			return
+		}
+		a.breadcrumbs(c)
+		ui.Spacer(c)
+		a.saveStatus(c)
+		// The rail's own tabs switch once it is open; the header keeps the
+		// one way in while it is closed.
+		if a.current != "" && !a.railShown {
+			if iconButton(c, "outline-toggle", icoOutline, "Contents", chromeIcon, false, true, true) {
+				a.toggleRail(railOutline)
+			}
+		}
+	})
+}
 
-	if c.Shortcut(ui.Cmd, ui.KeyN) {
-		a.newAsync()
+// breadcrumbs names the open page inside the workspace.
+func (a *app) breadcrumbs(c *ui.Context) {
+	t := c.Theme()
+	root := filepath.Base(a.settings.Workspace)
+	if root == "" || root == "." || root == "/" {
+		root = "Bub"
 	}
-	if c.Shortcut(ui.Cmd, ui.KeyO) {
-		a.openAsync()
+	ui.Text(c, root).FontSize(tokens.FontBody).TextColor(t.TextMuted).SingleLine()
+	if dir := a.currentDir(); dir != "" {
+		parts := strings.Split(dir, "/")
+		if len(parts) > 2 {
+			parts = parts[len(parts)-2:]
+			parts[0] = "…"
+		}
+		for _, part := range parts {
+			ui.Icon(c, icoChevron).Size(12, 12).TextColor(t.TextMuted)
+			ui.Text(c, part).FontSize(tokens.FontBody).TextColor(t.TextMuted).SingleLine()
+		}
 	}
-	if c.Shortcut(ui.Cmd, ui.KeyS) {
-		a.saveAsync()
+	ui.Icon(c, icoChevron).Size(12, 12).TextColor(t.TextMuted)
+	title := a.documentTitle()
+	if title == "" {
+		title = untitledName
 	}
-	// The AI surfaces take Escape, ⌘Return and ⌘R wherever the focus is, so
-	// they work while a card button has it too.
-	if a.suggestion != nil {
-		c.OnShortcut(ui.Cmd, ui.KeyEnter, func() { a.applySuggestion() })
-		c.OnShortcut(ui.Cmd, ui.KeyR, func() { a.regenerate() })
-	}
-	if a.suggestion != nil || a.action != nil {
-		c.OnShortcut(0, ui.KeyEscape, func() { a.dismissSuggestion() })
-	}
+	ui.Text(c, title).FontSize(tokens.FontBody).FontWeight(tokens.WeightStrong).TextColor(t.Text).SingleLine().MaxWidth(320)
+}
 
+// saveStatus says what the file on disk has, without a toast or a dialog. A
+// saved page says nothing: only a write in progress or an unsaved edit does.
+func (a *app) saveStatus(c *ui.Context) {
+	if a.current == "" || (!a.saving && !a.dirty) {
+		return
+	}
+	t := c.Theme()
+	label := "Edited"
+	if a.saving {
+		label = "Saving…"
+	}
+	ui.Text(c, label).FontSize(tokens.FontMicro).TextColor(t.TextMuted).SingleLine()
+	ui.Box(c).Width(4)
+}
+
+// pageView is the writing surface: one calm measure of text, the page's
+// blocks, and the block chrome that appears at the caret or the pointer. The
+// editor spans the whole main area and centers the measure inside itself, so
+// its scroll bar sits at the window's edge instead of in the middle of the
+// content.
+func (a *app) pageView(c *ui.Context) {
+	if a.ws != nil && a.current == "" {
+		a.emptyState(c)
+		return
+	}
+	t := c.Theme()
 	blocks := a.blocks()
-	boxes := a.doc.VisibleParagraphs() // the last frame's boxes, as the gutter needs
-	layout := a.aiLayout(c, blocks, boxes)
+	boxes := a.doc.VisibleParagraphs()
+	// The measure is the editor's own padding: the page area around the text,
+	// at least the gutter the block chrome needs.
+	windowW, _ := c.Size()
+	areaW := windowW
+	if a.sidebarShown {
+		areaW -= a.sidebarWidth
+	}
+	if a.railShown && windowW >= 1040 {
+		areaW -= railWidth
+	}
+	if bounds := c.Resolve(a.editorArea).Bounds().W; bounds > 0 {
+		areaW = bounds
+	}
+	a.editorPadLeft = max(float32(editorPadX), (areaW-float32(a.settings.EditorWidth))/2)
+	a.editorTextWidth = max(areaW-2*a.editorPadLeft, 240)
+	look := a.editorLook(c, a.editorPadLeft)
+	// The editor asks for the code paragraphs' spans as it builds, so the
+	// frame's highlighting is ready first.
+	spansVersion := a.beginCodeFrame(c, blocks)
+	ui.Column(c).FillHeight().FillWidth().Children(func() {
+		ui.Box(c).Fill().Bind(&a.editorArea).Children(func() {
+			editor := richtext.Editor(c.Key("editor"), a.doc, richtext.EditorOptions{
+				Label:        "Page",
+				Placeholder:  "Start writing, or type / for blocks…",
+				Font:         ui.Font{Size: float32(a.settings.EditorFontSize), LineHeight: 1.6},
+				Theme:        look,
+				Menu:         a.blockContextMenu,
+				Spans:        a.codeSpans,
+				SpansVersion: spansVersion,
+			}).Fill().Background(t.Background).BorderWidth(0, 0, 0, 0).Radius(0).
+				MinHeight(0).FocusRing(false).AutoFocus().Bind(&a.editor)
+			if a.focusIn {
+				a.editor.Focus()
+				a.focusIn = false
+			}
+			if editor.Changed() {
+				a.onEdit()
+			}
+			a.blockChrome(c, blocks, boxes)
+			a.codeBlockFrames(c, blocks, boxes)
+			a.codeBlockTools(c, blocks, boxes)
+			a.slashMenu(c, blocks, boxes)
+			a.popover(c, blocks, boxes)
+		})
+		if !a.railShown {
+			a.askBubFAB(c)
+		}
+	})
+}
 
-	ui.Column(c).Fill().Background(colorBackground).Padding(16).Children(func() {
-		ui.Column(c).Fill().Radius(20).Background(colorPanel).Border(1, colorBorderSoft).
-			Shadow(0, 1, 2, 0, ui.RGBA(0, 0, 0, 0.03)).
-			Shadow(0, 18, 40, -18, ui.RGBA(24, 24, 27, 0.18)).
+// emptyState is the window before a page is open: one way to start, and
+// nothing else.
+func (a *app) emptyState(c *ui.Context) {
+	t := c.Theme()
+	ui.Column(c).Fill().AlignItems(ui.Center).Justify(ui.Center).Gap(14).Children(func() {
+		ui.Box(c).Size(48, 48).Radius(tokens.RadiusXL).Background(t.Accent.Alpha(0.12)).AlignItems(ui.Center).Justify(ui.Center).
 			Children(func() {
-				a.header(c, t)
-				if a.errText != "" {
-					a.errorBanner(c)
-				}
-				a.middle(c, t, blocks, boxes, layout)
-				if layout.visible && !layout.anchored {
-					a.aiDock(c)
-				}
+				ui.Icon(c, icoSparkle).Size(24, 24).TextColor(t.Accent)
 			})
-		a.footer(c)
+		ui.Text(c, "A quiet place to write").FontSize(tokens.FontPage + 1).FontWeight(tokens.WeightStrong).TextColor(t.Text)
+		ui.Box(c).Height(6)
+		if ui.PrimaryButton(c, "New page").Key("empty-new-page").Clicked() {
+			a.newPage()
+		}
 	})
 }
 
-// header names the document and its state, and holds the file actions and the
-// agent chip.
-func (a *app) header(c *ui.Context, t *ui.Theme) {
-	ui.Row(c).Height(58).Padding(0, 22).AlignItems(ui.Center).Gap(9).
-		BorderWidth(0, 0, 1, 0).BorderColor(colorBorderSoft).Children(func() {
-		ui.Text(c, "✦").FontSize(13).TextColor(colorViolet)
-		ui.Text(c, "Bub").FontSize(13).FontWeight(650).LetterSpacing(-0.1).TextColor(colorText)
-		ui.Box(c).Size(1, 15).Background(colorBorder).Margin(3, 5)
-		ui.Text(c, a.documentName()).FontSize(13).FontWeight(550).TextColor(colorText)
-		if a.dirty {
-			ui.Text(c, "•").FontSize(16).TextColor(colorViolet).Margin(0, 0, 0, -2)
-		}
-		ui.Spacer(c)
-		if a.activity != "" {
-			ui.Row(c).Gap(6).AlignItems(ui.Center).Margin(0, 10, 0, 0).Children(func() {
-				ui.Spinner(c).FontSize(11)
-				ui.Text(c, a.activity).FontSize(11).TextColor(colorViolet).MaxLines(1)
-			})
-		}
-		ui.Text(c, a.wordLabel()).FontSize(11).TextColor(colorFaint).Margin(0, 10, 0, 2)
-		a.fileButton(c, "New", "file-new", a.newAsync)
-		a.fileButton(c, "Open", "file-open", a.openAsync)
-		a.fileButton(c, "Save", "file-save", a.saveAsync)
-		ui.Row(c).Gap(6).AlignItems(ui.Center).Padding(5, 10).Radius(999).
-			Background(colorPanel).Border(1, colorBorder).Children(func() {
-			ui.Box(c).Size(6, 6).Radius(3).Background(a.statusColor())
-			ui.Text(c, a.statusLabel()).Key("status").FontSize(11).FontWeight(500).TextColor(colorMuted)
-		})
-	})
-}
-
-// fileButton is a small header button for New, Open and Save.
-func (a *app) fileButton(c *ui.Context, label, key string, action func()) {
-	if ui.Button(c, label).Key(key).FontSize(11).Radius(8).Padding(3, 10).
-		Background(colorPanel).Border(1, colorBorder).TextColor(colorText).Clicked() {
-		action()
+// askBubFAB is the floating way into the AI chat in the page's corner: the one
+// accent object in the writing view, gone while the rail is open.
+func (a *app) askBubFAB(c *ui.Context) {
+	t := c.Theme()
+	b := ui.Row(c).Key("ask-bub-fab").Absolute().Right(24).Bottom(20).Height(36).
+		Padding(0, 14).Radius(tokens.RadiusPill).Gap(7).AlignItems(ui.Center).
+		Background(t.Accent).Shadow(0, 8, 22, -10, ui.RGBA(0, 0, 0, 0.30)).Focusable()
+	switch {
+	case b.Pressed():
+		b.Background(t.AccentPressed)
+	case b.Hovered():
+		b.Background(t.AccentHover)
 	}
+	if b.Clicked() {
+		a.toggleRail(railChat)
+	}
+	b.Children(func() {
+		ui.Icon(c, icoSparkle).Size(15, 15).TextColor(t.AccentText)
+		ui.Text(c, "Ask Bub").FontSize(tokens.FontBody).FontWeight(tokens.WeightMedium).TextColor(t.AccentText).SingleLine()
+	})
+	b.Label("Ask Bub")
 }
 
-// errorBanner is the red row that appears when the agent cannot run: the
-// writing surface stays usable, and Retry starts the agent again.
-func (a *app) errorBanner(c *ui.Context) {
-	ui.Row(c).Key("error").Gap(10).AlignItems(ui.Center).
-		Margin(10, 18, 0, 18).Padding(7, 12).Radius(12).
-		Background(colorDangerBg).Border(1, colorDangerLine).Children(func() {
-		ui.Text(c, "!").FontSize(12).FontWeight(700).TextColor(colorDanger)
-		ui.Text(c, a.errText).Grow(1).FontSize(12).LineHeight(1.4).TextColor(colorDanger)
-		if ui.Button(c, "Retry").Key("retry").FontSize(11).Radius(999).Padding(3, 11).
-			Background(colorPanel).Border(1, colorDangerLine).TextColor(colorDanger).Clicked() {
-			a.reconnect()
+// rail is the right side of the page: the AI chat or the page's contents.
+func (a *app) rail(c *ui.Context) {
+	t := c.Theme()
+	ui.Column(c).Width(railWidth).FillHeight().Background(t.Surface).
+		BorderWidth(0, 1, 0, 0).BorderColor(t.Border).Children(func() {
+		ui.Row(c).Height(tokens.HeaderHeight).Padding(0, 10).Gap(2).AlignItems(ui.Center).Children(func() {
+			a.railTabButton(c, "Chat", icoChat, railChat)
+			a.railTabButton(c, "Contents", icoOutline, railOutline)
+			ui.Spacer(c)
+			if iconButton(c, "rail-close", icoClose, "Close panel", chromeIcon, false, true, true) {
+				a.railShown = false
+			}
+		})
+		if a.railTab == railOutline {
+			a.outlinePanel(c)
+			return
 		}
+		a.chatPanel(c)
 	})
 }
 
-// middle is the writing column: the gutter of block marks, the editor, and the
-// anchored AI surfaces over it.
-func (a *app) middle(c *ui.Context, t *ui.Theme, blocks []block, boxes []richtext.ParagraphBox, layout aiLayout) {
-	ui.Box(c).Grow(1).Clip().Children(func() {
-		ui.Column(c).Fill().AlignItems(ui.Center).Children(func() {
-			ui.Column(c).WidthPercent(100).MaxWidth(880).FillHeight().Padding(18, 0).Children(func() {
-				ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
-					a.gutter(c, blocks, boxes, layout)
-					ui.Box(c).Grow(1).FillHeight().Children(func() {
-						editor := richtext.EditorBase(c.Key("editor"), a.doc, richtext.EditorOptions{
-							Label:         "Document",
-							Placeholder:   "Start writing. Press ⌘K to work on a block with Bub.",
-							Font:          ui.Font{Size: 17, LineHeight: 1.6},
-							Theme:         a.editorTheme,
-							OnLinkCommand: a.openActionAtCaret,
-						}).Fill().AutoFocus().Bind(&a.editor)
-						if editor.Changed() {
-							a.dirty = true
-						}
-						if layout.visible && layout.anchored {
-							a.aiStack(c, layout)
-						}
-					})
+// railTabButton is one tab in the rail's header.
+func (a *app) railTabButton(c *ui.Context, label string, ic *ui.SVG, tab railTab) {
+	t := c.Theme()
+	active := a.railTab == tab
+	b := ui.Row(c).Height(tokens.ControlHeight).Padding(0, 9).Radius(tokens.RadiusSM).Gap(6).AlignItems(ui.Center).
+		Focusable()
+	switch {
+	case active:
+		b.Background(selectedFace(t))
+	case b.Hovered():
+		b.Background(t.SurfaceHover)
+	}
+	if b.Clicked() {
+		a.railTab = tab
+	}
+	b.Children(func() {
+		color := t.TextMuted
+		if active {
+			color = t.Text
+		}
+		ui.Icon(c, ic).Size(14, 14).TextColor(color)
+		ui.Text(c, label).FontSize(tokens.FontControl).FontWeight(tokens.WeightMedium).TextColor(color).SingleLine()
+	})
+	b.Label(label)
+}
+
+// outlinePanel lists the page's headings and moves the caret to one.
+func (a *app) outlinePanel(c *ui.Context) {
+	t := c.Theme()
+	entries := a.outline()
+	ui.Scroll(c).Fill().Children(func() {
+		ui.Column(c).Padding(12, 8).Gap(1).Children(func() {
+			if len(entries) == 0 {
+				ui.Text(c, "No headings yet. Type # to make one.").FontSize(tokens.FontCaption).TextColor(t.TextMuted).
+					Padding(4, 4).LineHeight(1.5)
+				return
+			}
+			for _, entry := range entries {
+				entry := entry
+				row := ui.Row(c).Key("outline-"+entry.BlockID).Height(28).Padding(0, 4).
+					PaddingStart(4 + 12*float32(entry.Level-1)).Radius(tokens.RadiusSM).AlignItems(ui.Center).Gap(6).
+					Focusable()
+				if row.Hovered() {
+					row.Background(t.SurfaceHover)
+				}
+				if row.Clicked() {
+					a.doc.SetSelection(entry.Start, entry.Start)
+					a.focusIn = true
+				}
+				row.Children(func() {
+					ui.Text(c, entry.Text).FontSize(tokens.FontControl).TextColor(t.Text).SingleLine()
 				})
-			})
+				row.Label(entry.Text)
+			}
 		})
 	})
 }
 
-// gutter is the quiet ✦ beside each visible paragraph: the block's action bar
-// opens from it, as ⌘K opens it from the caret.
-func (a *app) gutter(c *ui.Context, blocks []block, boxes []richtext.ParagraphBox, layout aiLayout) {
-	coveredFrom := float32(0)
-	if layout.visible && layout.anchored && a.suggestion != nil {
-		// A suggestion paints a band over the lines under it: the marks of the
-		// paragraphs it hides would float over it.
-		coveredFrom = layout.top - 2
-	}
-	ui.Box(c).Width(44).Clip().Children(func() {
-		for _, box := range boxes {
-			if box.Index < 0 || box.Index >= len(blocks) {
-				continue
-			}
-			if coveredFrom > 0 && box.Top >= coveredFrom {
-				continue
-			}
-			blk := blocks[box.Index]
-			active := a.action != nil && a.action.target.id == blk.id
-			color := colorFaint
-			if active {
-				color = colorViolet
-			}
-			mark := ui.Button(c, "✦").Key(fmt.Sprintf("ai-block-%d", box.Index)).
-				FontSize(12).Size(24, 24).Radius(12).BorderWidth(0).
-				Background(ui.Color{}).TextColor(color).
-				Absolute().Left(10).Top(box.Top - 3)
-			if mark.Hovered() || active {
-				mark.Background(colorVioletSoft)
-			}
-			if mark.Clicked() {
-				a.openActionForBlock(blk)
-			}
+// --- helpers --------------------------------------------------------------
+
+// iconStyle is how an icon button looks where it sits: square buttons in the
+// chrome, a compact one in a section header, and a labelled one under an
+// answer in the transcript.
+type iconStyle struct {
+	// Size is a square button's side; Height is a labelled button's.
+	Size, Height float32
+	// Glyph is the side of the icon.
+	Glyph float32
+	// Padded is the horizontal padding of a labelled button, Radius its
+	// corner; a square button always uses RadiusSM.
+	Padded, Radius float32
+	// ShowLabel shows the label beside the glyph, which squares do not.
+	ShowLabel bool
+	// HoverRead asks for the hover face only after asking the platform
+	// whether it hovers, as a section header's quiet button does.
+	HoverRead bool
+}
+
+var (
+	// chromeIcon is the window chrome's square icon button.
+	chromeIcon = iconStyle{Size: tokens.ControlHeight, Glyph: 16}
+	// railIcon is the rail header's, a little smaller, and in the accent
+	// while its popover is open.
+	railIcon = iconStyle{Size: 26, Glyph: 14}
+	// headerIcon is a sidebar section header's compact one.
+	headerIcon = iconStyle{Size: 22, Glyph: 14, HoverRead: true}
+	// answerIcon is a transcript action: a glyph and its label, kept built
+	// but out of the way until the answer is hovered.
+	answerIcon = iconStyle{Height: 22, Glyph: 12, Padded: 6, Radius: tokens.RadiusXS, ShowLabel: true}
+)
+
+// iconButton draws one icon button of style. A square button reports a click;
+// a labelled one only while it is shown. enabled false keeps a square button
+// from acting, dimmed, as the rail's do.
+func iconButton(c *ui.Context, key any, ic *ui.SVG, label string, style iconStyle, active, enabled, visible bool) bool {
+	t := c.Theme()
+	var b ui.Element
+	if style.ShowLabel {
+		b = ui.Row(c).Key(key).Height(style.Height).Padding(0, style.Padded).
+			Radius(style.Radius).Gap(4).AlignItems(ui.Center).Focusable()
+	} else {
+		b = ui.Box(c).Key(key).Size(style.Size, style.Size).Radius(tokens.RadiusSM).
+			AlignItems(ui.Center).Justify(ui.Center).Focusable()
+		if !enabled {
+			b.Disabled(true)
 		}
-	})
-}
-
-// aiLayout decides where the AI surfaces go: under the target paragraph when
-// the last frame's paragraph boxes leave room for them there, otherwise docked
-// above the footer.
-type aiLayout struct {
-	visible  bool
-	anchored bool
-	top      float32
-}
-
-func (a *app) aiLayout(c *ui.Context, blocks []block, boxes []richtext.ParagraphBox) aiLayout {
-	targetID := ""
+	}
 	switch {
-	case a.suggestion != nil:
-		targetID = a.suggestion.action.target.id
-	case a.action != nil:
-		targetID = a.action.target.id
+	case !enabled:
+		// Disabled above, and never in the accent.
+	case active:
+		b.Background(t.Accent.Alpha(0.14))
+	case style.HoverRead && !c.Preferences().Hover():
+		// Hover is read on request only: the quiet header button.
+	case b.Hovered():
+		b.Background(t.SurfaceHover)
 	}
-	if targetID == "" {
-		return aiLayout{}
+	if style.ShowLabel && !visible {
+		b.Opacity(0)
+		b.IgnoreInput(true)
 	}
-	layout := aiLayout{visible: true}
-	box, ok := boxForID(blocks, boxes, targetID)
-	if !ok {
-		return layout
+	clicked := b.Clicked()
+	color := t.TextMuted
+	if active && enabled && !style.ShowLabel {
+		color = t.Accent
 	}
-	areaHeight := a.editor.Bounds(c).H
-	if areaHeight <= 0 {
-		return layout
-	}
-	need := float32(0)
-	if a.action != nil {
-		need += a.actionBarHeight()
-	}
-	if a.suggestion != nil {
-		if need > 0 {
-			need += 8
-		}
-		need += a.cardHeight()
-	}
-	top := box.Top + box.Height + 8
-	if top+need <= areaHeight-4 {
-		layout.anchored = true
-		layout.top = top
-	}
-	return layout
-}
-
-// aiStack places the action bar and the suggestion card over the editor, under
-// the paragraph they belong to.
-func (a *app) aiStack(c *ui.Context, layout aiLayout) {
-	stack := ui.Column(c).Absolute().Left(0).Right(0).Top(layout.top - 4).
-		AlignItems(ui.Start).Gap(8)
-	if a.suggestion != nil {
-		// The band is the document showing a suggestion in place: it covers
-		// the lines under it rather than letting them peek around the card.
-		stack.Padding(4, 0, 8, 0).Background(ui.Hex("#fbfaff")).
-			BorderWidth(1, 0, 1, 0).BorderColor(ui.Hex("#eeebff"))
-	}
-	stack.Children(func() {
-		if a.action != nil {
-			a.actionBar(c)
-		}
-		if a.suggestion != nil {
-			a.suggestionCard(c).WidthPercent(80)
+	b.Children(func() {
+		ui.Icon(c, ic).Size(style.Glyph, style.Glyph).TextColor(color)
+		if style.ShowLabel {
+			ui.Text(c, label).FontSize(tokens.FontMicro).TextColor(color)
 		}
 	})
+	b.Label(label)
+	return clicked && enabled && (visible || !style.ShowLabel)
 }
 
-// aiDock shows the same surfaces in the flow above the footer, for when the
-// target paragraph is too low on the page to hold them.
-func (a *app) aiDock(c *ui.Context) {
-	ui.Column(c).Padding(10, 20, 12, 20).Gap(8).
-		BorderWidth(1, 0, 0, 0).BorderColor(colorBorderSoft).
-		Background(colorFooter).Children(func() {
-		if a.action != nil {
-			a.actionBar(c)
-		}
-		if a.suggestion != nil {
-			a.suggestionCard(c)
-		}
-	})
-}
-
-// actionBar is the block's actions: Rewrite, Shorten, Expand, Continue,
-// Translate, Ask…, and the one-line ask input behind the last.
-func (a *app) actionBar(c *ui.Context) ui.Element {
-	return ui.Column(c).Radius(12).Background(colorPanel).Border(1, colorVioletLine).
-		Shadow(0, 10, 26, -8, ui.RGBA(24, 24, 27, 0.16)).Children(func() {
-		ui.Row(c).Gap(1).Padding(5).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "✦").FontSize(11).TextColor(colorViolet).Padding(0, 6)
-			for _, act := range actionLabels {
-				if ui.Button(c, act.label).Key("ai-"+string(act.kind)).FontSize(11.5).
-					Radius(8).Padding(4, 9).BorderWidth(0).Background(ui.Color{}).
-					TextColor(colorText).Clicked() {
-					if act.kind == actionAsk {
-						a.askMode = true
-						a.askText = ""
-					} else {
-						a.chooseAction(act.kind, "")
-					}
-				}
-			}
-			ui.Spacer(c)
-			ui.Text(c, "⌘K").FontSize(10).TextColor(colorFaint).Padding(0, 8)
-		})
-		if a.askMode {
-			a.askRow(c)
-		}
-	})
-}
-
-// askRow is the one-line instruction input of "Ask…": type what the block
-// should become, then Generate.
-func (a *app) askRow(c *ui.Context) {
-	ui.Row(c).Gap(6).Padding(0, 6, 6, 6).Children(func() {
-		input := ui.TextInput(c.Key("ai-instruction"), &a.askText).
-			Placeholder("Ask Bub to edit this paragraph…").
-			FontSize(12).Grow(1).AutoFocus()
-		submitted := input.Submitted()
-		clicked := ui.Button(c, "Generate").Key("ai-generate").FontSize(11).
-			Radius(8).Padding(4, 10).BorderWidth(0).
-			Background(colorViolet).TextColor(colorOnInk).
-			Disabled(strings.TrimSpace(a.askText) == "").
-			Clicked()
-		if strings.TrimSpace(a.askText) != "" && (submitted || clicked) {
-			a.chooseAction(actionAsk, a.askText)
-		}
-	})
-}
-
-// suggestionCard is the agent's answer, streamed beside the block, never in
-// the document until accepted.
-func (a *app) suggestionCard(c *ui.Context) ui.Element {
-	s := a.suggestion
-	stale := a.suggestionStale()
-	body := s.text
-	if strings.TrimSpace(body) == "" {
-		switch s.status {
-		case suggestThinking:
-			body = "Thinking…"
-		case suggestFailed:
-			body = ""
-		}
-	}
-	return ui.Column(c).Radius(14).Background(colorPanel).Border(1, colorVioletLine).
-		Shadow(0, 14, 34, -12, ui.RGBA(24, 24, 27, 0.20)).Children(func() {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(8, 10, 0, 12).Children(func() {
-			ui.Text(c, "✦ "+suggestionLabel(s.action.kind)).FontSize(11).
-				FontWeight(650).TextColor(colorViolet)
-			if summary := a.suggestionSummary(s); summary != "" {
-				ui.Text(c, "· "+summary).FontSize(10.5).TextColor(colorFaint)
-			}
-			ui.Spacer(c)
-			if s.status.busy() {
-				if ui.Button(c, "Stop").Key("ai-stop").FontSize(10.5).Radius(999).
-					Padding(2, 9).Background(colorPanel).Border(1, colorBorder).
-					TextColor(colorMuted).Clicked() {
-					a.dismissSuggestion()
-				}
-			}
-			accept := ui.Button(c, "Accept").Key("ai-accept").FontSize(11).Radius(999).
-				Padding(3, 12).BorderWidth(0).
-				Background(colorViolet).TextColor(colorOnInk).
-				Disabled(s.status != suggestReady || stale || strings.TrimSpace(s.text) == "")
-			if accept.Clicked() {
-				a.applySuggestion()
-			}
-			if ui.Button(c, "Regenerate").Key("ai-regenerate").FontSize(11).Radius(999).
-				Padding(3, 11).Background(colorPanel).Border(1, colorBorder).
-				TextColor(colorText).Disabled(s.status.busy()).Clicked() {
-				a.regenerate()
-			}
-			if ui.Button(c, "Dismiss").Key("ai-dismiss").FontSize(11).Radius(999).
-				Padding(3, 11).Background(colorPanel).Border(1, colorBorder).
-				TextColor(colorText).Clicked() {
-				a.dismissSuggestion()
-			}
-		})
-		if body != "" {
-			muted := s.text == ""
-			ui.Scroll(c).MaxHeight(208).Padding(2, 12).Children(func() {
-				text := ui.Text(c, body).FontSize(15).LineHeight(1.6).TextColor(colorText)
-				if muted {
-					text.TextColor(colorMuted)
-				}
+// keycap shows a shortcut as a row of small key badges, as a shortcut legend
+// does: one badge per key, the platform's glyphs as the menu writes them.
+func keycap(c *ui.Context, keys string) ui.Element {
+	t := c.Theme()
+	return ui.Row(c).Gap(3).AlignItems(ui.Center).Label(keys).Children(func() {
+		for _, key := range keys {
+			ui.Box(c).Height(19).Padding(0, 5).Radius(tokens.RadiusXS).Background(t.Background).
+				Border(1, t.Border).AlignItems(ui.Center).Justify(ui.Center).Children(func() {
+				ui.Text(c, string(key)).FontSize(tokens.FontMicro).FontWeight(tokens.WeightMedium).TextColor(t.TextMuted).
+					SingleLine()
 			})
 		}
-		ui.Row(c).AlignItems(ui.Center).Padding(2, 12, 8, 12).Children(func() {
-			switch {
-			case stale:
-				ui.Text(c, "This paragraph changed — regenerate or dismiss.").
-					FontSize(10.5).TextColor(colorWarning)
-			case s.status == suggestFailed && s.errText != "":
-				ui.Text(c, s.errText).FontSize(10.5).TextColor(colorDanger).MaxLines(2)
-			}
-			ui.Spacer(c)
-			ui.Text(c, "⌘↩ accept · esc dismiss").FontSize(10).TextColor(colorFaint)
-		})
 	})
 }
 
-// footer is the standing key hint under the page.
-func (a *app) footer(c *ui.Context) {
-	ui.Row(c).Height(32).Padding(2, 6).AlignItems(ui.Center).Gap(10).Children(func() {
-		ui.Text(c, "⌘K").FontSize(10.5).TextColor(colorMuted)
-		ui.Text(c, "edit block").FontSize(10.5).TextColor(colorFaint)
-		ui.Text(c, "·").FontSize(10).TextColor(colorFaint)
-		ui.Text(c, "⌘S").FontSize(10.5).TextColor(colorMuted)
-		ui.Text(c, "save").FontSize(10.5).TextColor(colorFaint)
-		ui.Text(c, "·").FontSize(10).TextColor(colorFaint)
-		ui.Text(c, "⌘O").FontSize(10.5).TextColor(colorMuted)
-		ui.Text(c, "open").FontSize(10.5).TextColor(colorFaint)
-		ui.Text(c, "·").FontSize(10).TextColor(colorFaint)
-		ui.Text(c, "⌘N").FontSize(10.5).TextColor(colorMuted)
-		ui.Text(c, "new").FontSize(10.5).TextColor(colorFaint)
-		ui.Spacer(c)
-		ui.Text(c, a.documentPath()).FontSize(10).TextColor(colorFaint).MaxLines(1)
-	})
-}
-
-// --- Small view helpers ---------------------------------------------------
-
-func (a *app) statusLabel() string {
-	if s := a.suggestion; s != nil && s.status.busy() {
-		return "running"
+// shortTime names when a chat was last used, as a sidebar says it.
+func shortTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
 	}
-	return a.status.String()
-}
-
-func (a *app) statusColor() ui.Color {
+	d := time.Since(t)
 	switch {
-	case a.status == statusOffline:
-		return colorDanger
-	case a.status == statusConnecting:
-		return colorWarning
-	case a.suggestion != nil && a.suggestion.status.busy():
-		return colorViolet
+	case d < time.Minute:
+		return "now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	case d < 7*24*time.Hour:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	default:
-		return colorSuccess
+		return t.Format("Jan 2")
 	}
 }
 
-func (a *app) wordLabel() string {
-	words := a.words()
-	if words == 1 {
-		return "1 word"
-	}
-	return fmt.Sprintf("%d words", words)
+// handleShortcuts sets the window-wide keys the menus also offer.
+func (a *app) handleShortcuts(c *ui.Context) {
+	c.OnShortcut(ui.Cmd, ui.KeyK, func() { a.focusSearch() })
+	c.OnShortcut(ui.Cmd, ui.KeyJ, func() { a.toggleRail(railChat) })
+	c.OnShortcut(ui.Cmd|ui.Shift, ui.KeyO, func() { a.toggleRail(railOutline) })
+	c.OnShortcut(ui.Cmd, ui.KeyBackslash, func() { a.toggleSidebar() })
+	c.OnShortcut(ui.Cmd, ui.KeyComma, func() { a.showSettings() })
 }
 
-// suggestionLabel names the card for the action that made it.
-func suggestionLabel(kind actionKind) string {
-	switch kind {
-	case actionShorten:
-		return "Suggested shortening"
-	case actionExpand:
-		return "Suggested expansion"
-	case actionContinue:
-		return "Suggested continuation"
-	case actionTranslate:
-		return "Suggested translation"
-	case actionAsk:
-		return "Suggested edit"
-	default:
-		return "Suggested rewrite"
+// focusSearch opens the sidebar when it is hidden and puts the caret in its
+// search field: the ⌘K every page list has.
+func (a *app) focusSearch() {
+	if !a.sidebarShown {
+		a.sidebarShown = true
 	}
-}
-
-// suggestionSummary is the card's small second label: what changed, or what
-// the agent is doing.
-func (a *app) suggestionSummary(s *suggestionState) string {
-	if s.status.busy() {
-		return s.status.label()
-	}
-	if s.status == suggestFailed {
-		return "failed"
-	}
-	return changeSummary(s.action.target.text, s.text)
-}
-
-// boxForID finds the visible box of the paragraph with an ID.
-func boxForID(blocks []block, boxes []richtext.ParagraphBox, id string) (richtext.ParagraphBox, bool) {
-	for _, b := range blocks {
-		if b.id != id {
-			continue
-		}
-		for _, box := range boxes {
-			if box.Index == b.index {
-				return box, true
-			}
-		}
-		return richtext.ParagraphBox{}, false
-	}
-	return richtext.ParagraphBox{}, false
-}
-
-// actionBarHeight estimates the action bar's height for placement.
-func (a *app) actionBarHeight() float32 {
-	if a.askMode {
-		return 82
-	}
-	return 44
-}
-
-// cardHeight estimates the suggestion card's height for placement, from the
-// text it streams.
-func (a *app) cardHeight() float32 {
-	s := a.suggestion
-	if s == nil {
-		return 0
-	}
-	lines := float32(len([]rune(s.text)))/72 + 1
-	body := lines * 24
-	if body < 24 {
-		body = 24
-	}
-	if body > 208 {
-		body = 208
-	}
-	height := 84 + body
-	if s.status == suggestFailed && s.errText != "" {
-		height += 20
-	}
-	return height
+	a.searchField.Focus()
 }

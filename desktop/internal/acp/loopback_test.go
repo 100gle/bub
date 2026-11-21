@@ -2,6 +2,7 @@ package acp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"sync"
@@ -25,22 +26,37 @@ type fakeAgent struct {
 	mcpCount int
 	prompts  []sdk.PromptRequest
 	cancels  []string
-	script   func(ctx context.Context, f *fakeAgent, params sdk.PromptRequest) (sdk.PromptResponse, error)
+	// sessionConfig is what NewSession advertises and what
+	// SetSessionConfigOption answers with; configRequests are the change
+	// requests the agent heard.
+	sessionConfig  []sdk.SessionConfigOption
+	configRequests []sdk.SetSessionConfigOptionRequest
+	script         func(ctx context.Context, f *fakeAgent, params sdk.PromptRequest) (sdk.PromptResponse, error)
+	// imageCaps is what Initialize advertises under promptCapabilities.image.
+	imageCaps bool
 }
 
 func newFakeAgent() *fakeAgent { return &fakeAgent{} }
 
 var _ sdk.Agent = (*fakeAgent)(nil)
 
+// The fake advertises session configuration support, as an agent that returns
+// configOptions from session/new does.
+var _ sdk.AgentSessionConfig = (*fakeAgent)(nil)
+
 func (f *fakeAgent) Initialize(_ context.Context, params sdk.InitializeRequest) (sdk.InitializeResponse, error) {
 	f.mu.Lock()
 	f.protocol = int(params.ProtocolVersion)
 	f.info = params.ClientInfo
 	f.caps = params.ClientCapabilities
+	imageCaps := f.imageCaps
 	f.mu.Unlock()
 	return sdk.InitializeResponse{
 		ProtocolVersion: sdk.ProtocolVersion(ProtocolVersion),
 		AgentInfo:       &sdk.Implementation{Name: "fake-bub", Version: "9.9.9"},
+		AgentCapabilities: sdk.AgentCapabilities{
+			PromptCapabilities: sdk.PromptCapabilities{Image: imageCaps},
+		},
 	}, nil
 }
 
@@ -48,8 +64,40 @@ func (f *fakeAgent) NewSession(_ context.Context, params sdk.NewSessionRequest) 
 	f.mu.Lock()
 	f.cwd = params.Cwd
 	f.mcpCount = len(params.McpServers)
+	configOptions := append([]sdk.SessionConfigOption(nil), f.sessionConfig...)
 	f.mu.Unlock()
-	return sdk.NewSessionResponse{SessionId: "sess-1"}, nil
+	return sdk.NewSessionResponse{SessionId: "sess-1", ConfigOptions: configOptions}, nil
+}
+
+// SetSessionConfigOption records the change request, applies it to the fake's
+// advertised options and answers with them, as a real agent would.
+func (f *fakeAgent) SetSessionConfigOption(_ context.Context, params sdk.SetSessionConfigOptionRequest) (sdk.SetSessionConfigOptionResponse, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.configRequests = append(f.configRequests, params)
+	for i := range f.sessionConfig {
+		option := &f.sessionConfig[i]
+		switch {
+		case option.Select != nil && params.ValueId != nil && option.Select.Id == params.ValueId.ConfigId:
+			option.Select.CurrentValue = params.ValueId.Value
+		case option.Boolean != nil && params.Boolean != nil && option.Boolean.Id == params.Boolean.ConfigId:
+			option.Boolean.CurrentValue = params.Boolean.Value
+		}
+	}
+	return sdk.SetSessionConfigOptionResponse{ConfigOptions: f.sessionConfig}, nil
+}
+
+// setSessionConfig sets the options NewSession advertises.
+func (f *fakeAgent) setSessionConfig(options []sdk.SessionConfigOption) {
+	f.mu.Lock()
+	f.sessionConfig = options
+	f.mu.Unlock()
+}
+
+func (f *fakeAgent) configRequestList() []sdk.SetSessionConfigOptionRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]sdk.SetSessionConfigOptionRequest(nil), f.configRequests...)
 }
 
 func (f *fakeAgent) Cancel(_ context.Context, params sdk.CancelNotification) error {
@@ -166,6 +214,20 @@ func TestInitializeAndNewSession(t *testing.T) {
 	}
 	if info.AgentInfo == nil || info.AgentInfo.Name != "fake-bub" || info.AgentInfo.Version != "9.9.9" {
 		t.Errorf("agentInfo = %+v, want fake-bub 9.9.9", info.AgentInfo)
+	}
+	if info.PromptImage {
+		t.Error("the fake advertised images it did not set")
+	}
+
+	// An agent that advertises the image capability reports it.
+	imageLB := newLoopback(t)
+	imageLB.agent.imageCaps = true
+	imageInfo, err := imageLB.client.Initialize(ctx, Implementation{Name: "bub-desktop", Version: "0.1.0"})
+	if err != nil {
+		t.Fatalf("initialize with image capability: %v", err)
+	}
+	if !imageInfo.PromptImage {
+		t.Errorf("image capability after advertise = false, want true")
 	}
 
 	sent, protocol, caps := lb.agent.snapshot()
@@ -299,6 +361,82 @@ func TestSessionUpdateMapping(t *testing.T) {
 	}
 	if update.Title != nil || update.Name != nil {
 		t.Errorf("tool call update title/name = %v/%v, want nil (unchanged)", update.Title, update.Name)
+	}
+}
+
+func TestAvailableCommandsUpdateMapping(t *testing.T) {
+	lb := newLoopback(t)
+	var mu sync.Mutex
+	var updates []Update
+	lb.client.SetUpdateHandler(func(u Update) {
+		mu.Lock()
+		updates = append(updates, u)
+		mu.Unlock()
+	})
+	lb.agent.script = func(ctx context.Context, f *fakeAgent, params sdk.PromptRequest) (sdk.PromptResponse, error) {
+		err := f.conn.SessionUpdate(ctx, sdk.SessionNotification{
+			SessionId: params.SessionId,
+			Update: sdk.SessionUpdate{AvailableCommandsUpdate: &sdk.SessionAvailableCommandsUpdate{
+				Meta: map[string]json.RawMessage{
+					"commandPrefix": json.RawMessage(`","`),
+				},
+				AvailableCommands: []sdk.AvailableCommand{
+					{Name: "help", Description: "Show available commands"},
+					{
+						Name:        "demo",
+						Description: "Demo project skill",
+						Meta:        map[string]json.RawMessage{"kind": json.RawMessage(`"skill"`)},
+						Input: &sdk.AvailableCommandInput{
+							Unstructured: &sdk.UnstructuredCommandInput{Hint: "skill name"},
+						},
+					},
+				},
+			}},
+		})
+		if err != nil {
+			return sdk.PromptResponse{}, err
+		}
+		return sdk.PromptResponse{StopReason: sdk.StopReasonEndTurn}, nil
+	}
+
+	stop, err := lb.client.Prompt(context.Background(), "sess-1", []ContentBlock{TextBlock("hello")})
+	if err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if stop != StopEndTurn {
+		t.Errorf("stop reason = %q, want %q", stop, StopEndTurn)
+	}
+	waitFor(t, "the available commands update", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(updates) == 1
+	})
+	mu.Lock()
+	update := updates[0]
+	mu.Unlock()
+
+	if update.Type != UpdateAvailableCommands {
+		t.Fatalf("update type = %q, want %q", update.Type, UpdateAvailableCommands)
+	}
+	if update.CommandPrefix != "," {
+		t.Errorf("command prefix = %q, want %q", update.CommandPrefix, ",")
+	}
+	if len(update.Commands) != 2 {
+		t.Fatalf("commands = %+v, want two entries", update.Commands)
+	}
+	help := update.Commands[0]
+	if help.Name != "help" || help.Description != "Show available commands" {
+		t.Errorf("command 0 = %+v, want help with its description", help)
+	}
+	if help.Hint != "" || help.Kind != "" {
+		t.Errorf("command 0 hint/kind = %q/%q, want none", help.Hint, help.Kind)
+	}
+	demo := update.Commands[1]
+	if demo.Name != "demo" || demo.Description != "Demo project skill" || demo.Hint != "skill name" {
+		t.Errorf("command 1 = %+v, want demo with description and hint", demo)
+	}
+	if demo.Kind != "skill" {
+		t.Errorf("command 1 kind = %q, want skill", demo.Kind)
 	}
 }
 

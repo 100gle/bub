@@ -1,152 +1,239 @@
-# Bub Desktop — design notes (experiment)
+# Bub Desktop — design notes
 
-> The planned next step — turning this chat client into an AI-native writing
-> surface (rich text, block-level actions, a standby bar, voice input) — is in
-> [EDITOR_PLAN.md](EDITOR_PLAN.md), with mocks in `design/`.
+Status: the MVP described here is built in `desktop/`. [EDITOR_PLAN.md](EDITOR_PLAN.md)
+is the earlier proposal that started it (standby bar, voice and multi-window are
+still future work); the mocks in `design/` are from that proposal.
 
-Bub Desktop is a small experiment: a native desktop chat client for Bub, written in
-Go with the [MyGo](https://mygo.egoist.dev) UI toolkit and connected to a Bub agent
-through the [Agent Client Protocol](https://agentclientprotocol.com) (ACP v1) over
-stdio.
+## The idea
 
-The point is to keep the two halves completely decoupled:
+A page is a document, and the agent belongs to the block you are writing, not to
+a transcript. Two surfaces, one model:
+
+- **Block AI** at the caret: the smallest possible request — rewrite, shorten,
+  expand, continue, translate, or ask — answered into a popover, applied only
+  when the writer accepts.
+- **A chat rail** for everything that is not one block: "how does this argument
+  read", "what should follow this page". The rail reads the pages and files the
+  writer attaches to the conversation, and its answers can be inserted.
+
+The window stays quiet: no formatting toolbar, no status bar, no chat by
+default. Menus carry the actions, the sidebar carries the workspace, and the
+rail is opt-in.
+
+## Window anatomy
 
 ```
-┌──────────────────────────────┐        ACP v1, JSON-RPC 2.0 over stdin/stdout       ┌───────────────────────────┐
-│  desktop/ (Go, MyGo native)  │  ── session/new, session/prompt ────────────────►  │  bub acp (Python)         │
-│  Bub Desktop window          │  ◄── session/update notifications ───────────────  │  BubFramework turns       │
-│  chat, tool calls, markdown  │  ◄── session/request_permission (future) ───────   │  model, tools, tape       │
-└──────────────────────────────┘                                                     └───────────────────────────┘
-        ACP client                                                                       ACP agent
+sidebar 240 DIPs (resizable) │ page, centered at 720 DIPs │ rail 288 DIPs
 ```
 
-Anything that speaks ACP could sit on either side later (Zed as the client, another
-agent as the backend); the experiment only ships the two ends above.
+- **Sidebar** — surface color, hairline-free against the canvas. A search
+  field (`⌘K`) over the pages tree (folders + pages) and Chats (saved conversations),
+  with nothing else in the body: no empty-state paragraph and no second New page
+  button, since the section header already carries it. Footer with Settings and
+  its `⌘,` shortcut. A query filters both lists, keeps folder rows only for
+  matches, and opens folders while filtering without changing their saved
+  state.
+- **Header** — the sidebar toggle, the workspace breadcrumb, a save state only
+  while a page is being written or holds unsaved edits, and the Contents button
+  while the rail is closed. The only chrome above the page.
+- **Writing column** — `EditorWidth` from settings (720 default) plus at least
+  a 56 DIP gutter on each side; the gutter holds the block handle and the `/`
+  button. The editor fills the main area and centers the measure inside itself,
+  so the page's scroll bar sits at the window's edge rather than in the middle
+  of the content.
+- **Ask Bub button** — a floating pill in the page's bottom-right corner. It
+  opens the chat rail and is gone while the rail is open, so the rail's tabs are
+  the only switch then and the window never shows two controls for one action.
+- **Rail** — `Chat` or `Contents`, switched in its tabs; closes with the close
+  button. Hidden below 1040 DIPs so the page keeps its measure. The chat rail is
+  the quick companion while writing; the same conversation opens full-size from
+  the sidebar.
+- **Chat page** — a saved conversation opens from the sidebar into the main
+  area at a 680 DIP measure. The writer's turns sit as quiet bubbles at the end
+  of the measure, answers are Markdown at page size, and the composer grows
+  with the draft: Enter sends, Shift+Enter keeps a line, the draft survives a
+  switch to the rail, and a streaming answer offers Stop. The composer is one
+  rounded card whose field owns a row and whose toolbar owns another — a plus
+  attaches files, `@` mentions a workspace page and carries it along as an ACP
+  resource link, `/` runs a command or expands a skill, and the toolbar's
+  round Send and the session options the agent advertises — its model, its
+  thinking level, and whatever else it names — share one centered line. Answers
+  are actions a chat has: Copy, Regenerate; only where the page sits beside
+  the conversation (the rail) can an answer also enter the page. This is ACP's
+  session config options extension: `session/new` carries the options, and
+  `session/set_config_option` applies a choice to that session's later turns.
+  An agent that does not implement the extension simply shows no selectors.
+  The commands and skills `/` lists come from the agent's
+  `available_commands_update`; an agent that advertises none shows a quiet
+  note instead. The connection itself belongs
+  to Settings, so the composer says nothing about it. `⌘J` still opens the rail;
+  the sidebar and the rail show the same conversation.
+- **Settings** — one centered column of inset groups. A group is its muted
+  caption over a hairline-bordered card on the page's own color — grouping
+  without the gray fill that turned the page into a stack of tinted boxes;
+  clear space separates the groups, rows are separated by hairlines inset from
+  the card's edge, and each row is its name, its description under the name,
+  and the control right-aligned in a fixed measure. A row that needs a long
+  field (the agent command) takes the card's full width under its label.
 
-## Components
+Visual language: SF Pro, the system font — the theme leaves the family empty so
+Core Text resolves it with its optical sizes and tracking — at Apple's 13 DIP
+control size. System light/dark themes with Bub's sky-blue accent (`#0077b6`
+light, `#38bdf8` dark). Every geometric decision comes from `tokens.go`: a radius
+scale (6, 8, 12, 16, 20 DIP, and a pill) instead of one-off corners, a 4 DIP
+spacing unit, regular 12 px group captions and 12–13 px chrome type, 16 px page
+type at 1.6 line height, and 1.8-stroke icons. Weights stay regular for rows and
+labels, medium for the chosen row, and semibold only for titles; nothing is bold
+for emphasis. Hairlines carry structure, and floating surfaces get one soft
+shadow and the canvas color rather than a gray fill. The chosen row or tab takes
+a 10% accent tint (18% in dark), so color and weight carry the selection
+together, as a macOS sidebar's does. Shortcuts render as keycap badges: one per
+key in the settings legend, one compact badge in the sidebar footer. Every
+custom control is `Focusable` and keeps the theme's focus ring.
 
-| Piece | Path | Owner |
-| --- | --- | --- |
-| ACP agent (`bub acp`) | `src/bub/builtin/acp.py`, `tests/test_acp.py` | `acp-server` |
-| MyGo desktop client | `desktop/` (Go module) | `desktop-ui` |
-| Design + integration/E2E | this file, branch `feat/bub-desktop-mygo` | lead |
+Copy is chrome too. A label names the control beside it, and a dialog says only
+what the action does; nothing repeats what the layout already shows. A saved
+page has no "Saved" badge, a conversation needs no "YOU" over the writer's own
+bubble, the Contents rail needs no "On this page" heading, the settings page
+needs no subtitle under the title, and a preference that reads clearly from its
+control gets no description sentence.
 
-## ACP agent: `bub acp`
+## The block model
 
-A new Typer subcommand that speaks ACP over the process's stdin/stdout.
+`richtext` paragraphs are the blocks; the app adds chrome, not a text engine.
 
-- One JSON-RPC 2.0 object per line, UTF-8. Nothing else may be written to stdout;
-  logs go to stderr (loguru already does).
-- `protocolVersion` is `1`.
-- Methods implemented:
-  - `initialize` → `{protocolVersion: 1, agentCapabilities: {...}, agentInfo: {name, version}}`
-  - `session/new` → `{sessionId}`; `cwd` must be absolute. The session id maps to a
-    Bub session id `acp:<sessionId>` so tapes are isolated per ACP session.
-  - `session/prompt` → runs one Bub turn, streams updates, then responds
-    `{stopReason: "end_turn"}` (or `"cancelled"`).
-  - `session/cancel` → cancels the active turn of that session.
-  - `session/load` and the other session-management methods are not supported and
-    answer with JSON-RPC `-32601` (Method not found); `agentCapabilities.loadSession`
-    is `false`.
-- Capabilities are deliberately conservative: no image/audio/embeddedContext prompt
-  support, no MCP, no terminals, no fs delegation. Bub tools act on the workspace
-  itself; the client is not asked to read or write files.
-- One process = one workspace. The first `session/new` `cwd` sets
-  `BubFramework.workspace`; `--workspace` on the CLI still wins when given.
+- `blocks.List` reads the paragraphs into blocks with rune offsets and stable IDs
+  from `Document.IdentifyParagraphs`.
+- **`/` menu**: when a paragraph begins with `/`, the typed query becomes the
+  menu's filter. Choosing a type calls `blocks.Apply`, which restyles the
+  paragraph and removes the `/query` in the same undo step. The menu also opens
+  from the gutter `+`.
+- **Fence languages** are not part of `richtext`'s paragraph style: the app
+  reads them from the Markdown on open, keys them by the first paragraph's ID,
+  writes them back on save, and feeds them to the editor's syntax highlighting.
+- **Drag**: the gutter handle drags a `blockDrag` value; boundary zones accept it
+  and call `blocks.Move`, which rebuilds the paragraph list and re-applies styles
+  and IDs as one undo step. The area under the last block appends; boundaries
+  inside a code block are omitted.
+- **Contents** is `blocks.Outline`: level, text and rune offset per heading.
+  MyGo has no scroll-to-paragraph, so choosing one sets the caret and the editor
+  reveals it.
+- **Context menu** is `EditorOptions.Menu` (`blockContextMenu` in
+  `context_menu.go`): the system's Cut, Copy, Paste and Select All, then a **Bub**
+  submenu of the block actions. The target is the paragraph holding the
+  selection's start, so the agent operates on what the writer selected.
 
-### Streaming mapping
+Offsets are rune offsets throughout. Block chrome lives in app state and never
+enters the text.
 
-The turn runs through the normal `BubFramework.process_inbound(..., stream_output=True)`
-path with a small `ChannelRouter` bound to the ACP connection:
+## The AI contract
 
-| Bub stream event | ACP `session/update` |
-| --- | --- |
-| `text` delta | `agent_message_chunk` (`content: {type: "text", text}`) |
-| `reasoning` delta | `agent_thought_chunk` |
-| `tool_call` | `tool_call` (pending, title = tool name, rawInput = arguments) |
-| `tool_result` | `tool_call_update` (completed / failed, rawOutput = result) |
-| `error` | logged; the prompt still ends with `end_turn` |
+Both surfaces are one ACP `session/prompt`. The difference is the output
+contract and the review surface.
 
-Tool call ids are stable per call: the agent assigns one when `ToolCallStarted`
-is seen and reuses it on `ToolCallFinished`. `ToolKind` is mapped from the tool
-name (`read`/`edit`/`execute`/`fetch`/`think`/`other`).
+**Block action**
 
-Cancellation is `asyncio.Task.cancel()` on the turn task; the framework's
-`process_inbound` already saves state in a `finally` block, so a cancelled turn
-keeps its tape.
+- Input: instruction, page title, outline, target block, neighbours (configurable).
+- Output contract: the replacement paragraph only — no fences, no quotes, no
+  explanation. The client strips wrappers and refuses empty answers.
+- Review: popover under the block with Accept / Dismiss / Regenerate; Accept is
+  one `Document.Edit` by paragraph ID and refuses a stale target. One action at
+  a time; a new one cancels and queues.
 
-### Not in scope (documented, not built)
+**Chat**
 
-- `session/request_permission` (Bub has tool denials via hooks; wiring a UI
-  prompt is a later step).
-- `session/load`, session list/delete/resume, MCP servers, terminals, fs delegation.
-- Slash-command autocomplete (`available_commands_update`).
+- Context: the pages the conversation references and the files attached to the
+  turn, both shown as removable chips above the composer field. A new chat
+  references nothing; the open page becomes context only when the writer
+  attaches it (composer's plus, a page's **Chat about this page**, or `@`).
+- Input: instruction; every referenced page as an ACP `resource_link` block,
+  and every attached file either as an inline `image` block (base64, when the
+  agent advertises the image capability) or, for any other file, as a
+  `resource_link` block; for the referenced page that is open, its title, up to
+  12 headings, caret block and neighbours when the settings allow; and a
+  system line asking for concise Markdown. Pictures attached to the turn
+  render in the writer's bubble and open in the system viewer on click.
+- Output: Markdown, rendered by `ui/markdown` and streamed with `Stream`.
+  Answers use `markdownLook` in the rail and `pageMarkdownLook` on the chat page
+  (`theme.go`): body size and heading ramp from the tokens, and code blocks as
+  bordered panels at `RadiusMD` with the fence's language, a Copy button and
+  syntax highlighting. The page body is not Markdown rendering but a `richtext`
+  editor, whose code blocks get the same neutral panel, radius and hairline
+  frame from `editorLook` and `codeBlockFrames`, and syntax highlighting from
+  `EditorOptions.Spans`. `richtext` keeps no fence language, so the app
+  remembers each block's language beside the document (keyed by the block's
+  first paragraph ID): `setMarkdown` reads it, `markdownText` writes it back on
+  save, and `codeSpans` tokenizes the block with `editor.LanguageNamed`. A code
+  block typed fresh in the editor has no language until a saved fence names
+  one.
+- Review: answers are messages with a chat's actions — Copy, and Regenerate
+  for the turn that just answered. Only in the rail, where the page sits
+  beside the conversation, does an answer also offer Insert: one
+  `Document.Insert` + one undo step. A page holds any number of conversations
+  and a conversation may reference several pages; one ACP session per
+  conversation (so context is isolated), one turn at a time with a pending
+  queue.
 
-## Desktop client: `desktop/`
+Context is deliberately small: a block action never sends the whole page unless
+the settings say to include the outline. The full page is never sent implicitly,
+and a chat never inherits the page that merely happens to be open. The **Bub**
+menu, the context menu and the `⇧⌘R` path all build the same action;
+the target is the caret's block, or the paragraph a right-click selected.
 
-- Go module `github.com/bubbuild/bub/desktop` (own module; the repo stays a Python
-  project), MyGo `v0.8.3`, native UI only (`ui` package, no webview, no Bun).
-- `internal/acp`: a thin adapter over the ACP Go SDK
-  (`github.com/caelis-labs/acp-go-sdk` v1.6.0), which owns the JSON-RPC/typed v1
-  framing and the agent subprocess. The adapter keeps the spawn config, the
-  app-facing `Update` model, and the typed-update mapping; tests drive it over
-  in-memory pipes and against a spawned SDK test agent.
-- The app spawns the agent (`BUB_ACP_CMD`, default `bub acp`), runs
-  `initialize` + `session/new {cwd: <process cwd>}`, and shows a **Markdown
-  editor**, not a chat (the implementation is `view.go` and `editor.go`; the
-  design proposal is [EDITOR_PLAN.md](EDITOR_PLAN.md)):
-  - one centered writing column (`richtext.EditorBase`), a block gutter, a header
-    with the document name, dirty marker, word count and connection chip, and a
-    footer of keys; no message list, bubbles or Send;
-  - `⌘K` on the caret's block, or the `✦` in the gutter, opens a block action bar
-    (Rewrite, Shorten, Expand, Continue, Translate, Ask…); one `session/prompt`
-    per action carries the instruction, the block and its neighbouring
-    paragraphs, and asks for replacement text only;
-  - `agent_message_chunk` notifications stream into an inline suggestion card
-    with Accept (one `Document.Edit` undo step, resolved by paragraph ID and
-    refused when the block changed), Regenerate, Dismiss and Stop
-    (`session/cancel`); tool calls and thoughts only set a small activity label;
-  - New/Open/Save read and write Markdown through native dialogs
-    (`mygo.Dialog`), and an error banner with Retry covers agent failures.
-- All UI state is updated on the main thread via `win.Update`.
-- Tests: prompt and action-engine tests plus `ui.NewTester` view tests in
-  `main_test.go`; client tests with an SDK fake agent over in-memory pipes and a
-  spawned SDK test agent.
+## Persistence
 
-## How to run
+- **Pages**: a folder of Markdown files (`~/Bub` by default), folders for
+  nesting. No database, no sidecar. The title is the first heading; renaming
+  renames the file and the heading together.
+- **Settings**: `os.UserConfigDir()/Bub Desktop/settings.json`; written on every
+  change (theme, width, font, context, agent command, autosave).
+- **Chats**: one JSON file per conversation under `chats/`, saved after each
+  turn; the sidebar list is sorted by `updatedAt`.
+- Writes are atomic (temp + rename) and paths are resolved with `os.Root` so a
+  page cannot escape the workspace.
 
-```sh
-# terminal 1 (or let the app spawn it): from the repo root
-uv run bub acp            # protocol on stdout, logs on stderr
+## ACP and processes
 
-# terminal 2
-cd desktop
-BUB_ACP_CMD="uv run bub acp" go run .
-```
+The agent is a separate `bub acp` process. The app spawns it where it was
+launched (so `uv run bub acp` resolves the checkout's environment) and roots the
+session at the page workspace (so the agent sees the same Markdown files).
+`session/new` is called once for block actions and once per chat conversation;
+it is prefetched when a chat opens so the composer can show the agent's model
+and thinking selectors, and `session/set_config_option` applies a choice to that
+session's later turns. Notifications are routed by session id: block chunks go
+to the suggestion, chat chunks to the conversation. `session/cancel` stops one
+turn.
 
-Use `--workspace` on the agent or the app's cwd to choose the project the agent sees.
+## Decisions and trade-offs
 
-## Verification
+- **Markdown over a custom document format.** Git-friendly and portable, at the
+  cost of losing rich formatting on save; block IDs are session-only.
+- **`richtext` over a custom block engine.** Undo, Markdown shortcuts, IME,
+  accessibility and code formatting come for free. The cost is that a code block
+  is several paragraphs; the app works at block level and anchors UI to
+  paragraph boxes, and the context menu replaces the editor's own menu to add
+  the Bub submenu.
+- **A pinned MyGo commit.** The module pins
+  `v0.8.4-0.20261110073650-5ae20dc8a990`, which adds
+  `EditorOptions.Menu` (the context menu above), `Document.CaretRect` and
+  `EditorOptions.OnKey`. Being a commit rather than a release is the cost of
+  those hooks; the app still builds against it alone.
+- **One window, one page.** Simpler state and fewer failure modes for the MVP;
+  multi-window and session restore are future work.
+- **A rail rather than a chat window.** It keeps the page and the conversation
+  visible together; it stays out of the way when closed and remembers its tab.
+- **Cyan accent only for selection, AI and focus.** The chrome is neutral, so
+  AI surfaces read as the one active thing in the window.
+- **The floating Ask Bub button gives way to the rail.** One entry point at a
+  time: the button closes when the rail opens, and the rail's tabs take over.
 
-- `uv run pytest tests/test_acp.py -q` plus the existing suite.
-- `go build ./...`, `go test ./...`, `go vet ./...` in `desktop/`.
-- End-to-end: launch the desktop app against `uv run bub acp` with the repo's
-  real model settings, put the caret in a paragraph, press `⌘K`, run Rewrite,
-  accept the streamed suggestion, and save the Markdown; screenshot the window
-  through MyGo's automation plugin.
+## Open questions
 
-What was actually run on this branch (`feat/bub-desktop-mygo`):
-
-- `uv run pytest -q` → 744 passed, 21 skipped; `ruff check` and `mypy src` clean.
-- `cd desktop && go build ./... && go test ./... && go vet ./...` → clean
-  (also `go build -tags e2e ./...`).
-- Live ACP smoke against the real model: `initialize`, `session/new`,
-  `session/prompt` streamed `agent_message_chunk`s and returned `end_turn`; a
-  turn using `fs.read` produced `tool_call` + `tool_call_update`; `session/cancel`
-  returned `cancelled`.
-- Editor UI: headless `ui.Render` snapshots of the empty, writing, action-bar,
-  ask, suggestion, streaming, docked and error states were inspected;
-  `screenshot.png` is a render of the suggestion state. The automation keys for
-  the editor, file actions, block actions and suggestion card are listed in
-  `README.md`; a real-model end-to-end run through `MYGO_AUTOMATION` is the
-  remaining acceptance step.
+- A faster model path for Continue and a diff for suggestions (word-level, not
+  just the rewritten text).
+- Multi-block selection as a target for block AI.
+- Page search, backlinks and a graph.
+- Drag-and-drop of pages into folders (currently the folders come from disk).
+- Session restore and a document-per-window mode.
+- A caret-anchored block menu and ghost completion, now that the pinned MyGo has
+  `Document.CaretRect` and `EditorOptions.OnKey`.

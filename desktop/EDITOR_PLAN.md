@@ -1,11 +1,11 @@
 # Bub Desktop: from chat client to an AI-native writing surface
 
-Status: MVP implemented in `desktop/` (editor, block actions, inline
-suggestions, Markdown open/save); the standby bar, voice and multi-document
-phases below are not built yet. This document redesigns `desktop/` from the
-previous ACP chat window into a rich-text editor where a person and an agent
-write in the same document, with **no chat pane**. The agent is present the way
-a good writing tool is: at the block, at the caret, and behind a wake shortcut.
+Status: historical proposal. The first phase (block editor, block actions,
+inline suggestions, Markdown files) shipped first; Bub Desktop has since grown
+into the Notion-like app described in [DESIGN.md](DESIGN.md) — pages and a
+sidebar, a `/` block menu, draggable blocks, a contents rail, an AI chat rail
+and settings. The standby bar, voice and multi-window phases below are still
+not built. This document is kept as the design record that started the editor.
 
 ![The editor with a block action bar and an inline suggestion](design/editor.png)
 
@@ -44,7 +44,7 @@ chrome, not a new text model.
 ### 2.2 Block actions
 
 The caret's block gets a quiet `✦` in the gutter (on hover, or when the caret
-enters it). `⌘K`, the gutter button, or the context menu opens a bar anchored
+enters it). `⇧⌘R`, the gutter button, or the context menu opens a bar anchored
 to the block:
 
 | Action | Prompt shape |
@@ -279,7 +279,7 @@ v0.8.3`; it exercises the pieces below.
 | Wake shortcut | `mygo.GlobalShortcut.Register("Alt+Space", toggle)` | fails if taken; let the user choose |
 | Background app | `LSUIElement` in `mygo.json`, `App.SetActivationPolicy(Accessory)` | launcher-style app, optional tray icon |
 | Documents | `mygo.NewDocuments(DocumentsOptions[content]{...})` | autosave, recovery, File menu, reopen |
-| Theme | `richtext.EditorOptions.Theme`, window theme | violet accent only for AI surfaces |
+| Theme | `richtext.EditorOptions.Theme`, window theme | sky-blue accent only for AI surfaces |
 | Testing | `ui.NewTester`, `ui.Render`, MyGo automation plugin | gutter/anchoring logic and the standby view are testable headlessly |
 
 ### What v0.8.3 cannot do (and the workaround)
@@ -321,7 +321,7 @@ all from `mygo.NewDocuments`.
 
 ### Phase 0 — spike (2–3 days)
 
-- Window with a `Documents`-backed richtext editor; block gutter; `⌘K` action
+- Window with a `Documents`-backed richtext editor; block gutter; `⇧⌘R` action
   bar; one "Rewrite" action through `bub acp`; streaming suggestion card;
   Accept applies one undo step.
 - **Accept when**: a real model reply can be accepted and undone, and the
